@@ -1,0 +1,21 @@
+name: spm
+description: Unified static analysis and runtime profiling for Flutter State rebuild triggers.
+version: 1.0.0
+
+environment:
+  sdk: ^3.9.2
+  flutter: ">=3.3.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  analyzer: ^10.0.0
+  args: ^2.7.0
+  path: ^1.9.0
+  dartz: ^0.10.1
+  vm_service: ^15.0.2
+  web_socket_channel: ^3.0.3
+
+dev_dependencies:
+  lints: ^6.0.0
+  test: ^1.25.6

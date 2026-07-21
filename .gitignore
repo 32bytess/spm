@@ -1,0 +1,22 @@
+# Dart / Flutter
+.dart_tool/
+build/
+.flutter-plugins-dependencies
+coverage/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# OS / misc
+.DS_Store
+*.log
+*.swp
+
+# Local agent/scratch (not part of the tool)
+.claude/
+memory/
+wiki/
+
+# pubspec.lock IS tracked here on purpose (reproducible research tool)
