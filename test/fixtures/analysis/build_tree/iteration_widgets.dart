@@ -21,7 +21,10 @@ class _MapIterationExampleState extends State<MapIterationExample> {
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: [Text('header'), ...items.map((e) => Card(child: Text(e)))],
+      children: [
+        Text('header'),
+        ...items.map((e) => Card(child: Text(e))),
+      ],
     );
   }
 }

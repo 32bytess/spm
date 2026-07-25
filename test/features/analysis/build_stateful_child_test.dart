@@ -4,7 +4,7 @@ build() of its own — the extractor must resolve its State class (via the
 createState() body, falling back to `extends State<W>`) and analyze that
 build, its helpers, and its subtree.
 */
-import 'package:spm/features/analysis/domain/entities/analysis_result_entity.dart';
+import 'package:spm/src/features/analysis/domain/entities/analysis_result_entity.dart';
 import 'package:test/test.dart';
 
 import 'utils/test_helper.dart';
@@ -13,7 +13,9 @@ void main() {
   late AnalysisResultEntity host;
 
   setUpAll(() async {
-    final results = await getResultsForFixture('build_tree/stateful_child.dart');
+    final results = await getResultsForFixture(
+      'build_tree/stateful_child.dart',
+    );
     host = results.firstWhere(
       (r) => r.stateClassName == '_StatefulChildHostState',
     );

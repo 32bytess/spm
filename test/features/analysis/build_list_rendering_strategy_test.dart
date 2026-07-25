@@ -3,7 +3,7 @@ integration test for treeListRenderingStrategy (0 none / 1 lazy / 2 eager):
 shape-based classification of the `children:` expression plus lazy list
 constructors, aggregated as the max across build, helper, and child bodies.
 */
-import 'package:spm/features/analysis/domain/entities/analysis_result_entity.dart';
+import 'package:spm/src/features/analysis/domain/entities/analysis_result_entity.dart';
 import 'package:test/test.dart';
 
 import 'utils/test_helper.dart';

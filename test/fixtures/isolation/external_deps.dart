@@ -5,9 +5,8 @@ import 'deep_deps.dart';
 class ExternalChild extends StatelessWidget {
   const ExternalChild({super.key});
   @override
-  Widget build(BuildContext context) => const Column(
-        children: [Text('External'), DeepWidget()],
-      );
+  Widget build(BuildContext context) =>
+      const Column(children: [Text('External'), DeepWidget()]);
 }
 
 // StatefulWidget child — isolation must include both the widget AND its State

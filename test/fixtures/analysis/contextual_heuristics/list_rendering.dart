@@ -20,9 +20,7 @@ class _FixedColumnExampleState extends State<FixedColumnExample> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [Text('a'), if (flag) Text('b'), Text('c')],
-    );
+    return Column(children: [Text('a'), if (flag) Text('b'), Text('c')]);
   }
 }
 

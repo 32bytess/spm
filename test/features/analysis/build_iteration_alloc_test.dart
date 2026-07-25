@@ -5,7 +5,7 @@ integration test for the two literature-backed features added 2026-07-20:
  - valueObjectAllocCount: non-const value-object allocations (EdgeInsets,
    TextStyle, ...) paid on every rebuild; const value objects excluded.
 */
-import 'package:spm/features/analysis/domain/entities/analysis_result_entity.dart';
+import 'package:spm/src/features/analysis/domain/entities/analysis_result_entity.dart';
 import 'package:test/test.dart';
 
 import 'utils/test_helper.dart';
@@ -36,7 +36,8 @@ void main() {
       expect(
         r.treeNonConstWidgetCount,
         equals(4),
-        reason: 'per-element widgets still count in the total (Column, header '
+        reason:
+            'per-element widgets still count in the total (Column, header '
             'Text, Card, Text)',
       );
     });
@@ -56,7 +57,8 @@ void main() {
       expect(
         r.iterationWidgetCount,
         equals(2),
-        reason: 'ListTile + Text run per visible element; the ListView itself '
+        reason:
+            'ListTile + Text run per visible element; the ListView itself '
             'does not',
       );
     });
@@ -86,19 +88,23 @@ void main() {
       );
     });
 
-    test('all three non-const value objects in the value_objects fixture', () async {
-      final results = await getResultsForFixture(
-        'build_tree/value_objects.dart',
-      );
-      final r = results.firstWhere(
-        (x) => x.stateClassName == '_ValueObjectExampleState',
-      );
-      expect(
-        r.valueObjectAllocCount,
-        equals(3),
-        reason: 'EdgeInsets.all + EdgeInsets.symmetric + TextStyle, all '
-            'non-const — previously this signal was discarded entirely',
-      );
-    });
+    test(
+      'all three non-const value objects in the value_objects fixture',
+      () async {
+        final results = await getResultsForFixture(
+          'build_tree/value_objects.dart',
+        );
+        final r = results.firstWhere(
+          (x) => x.stateClassName == '_ValueObjectExampleState',
+        );
+        expect(
+          r.valueObjectAllocCount,
+          equals(3),
+          reason:
+              'EdgeInsets.all + EdgeInsets.symmetric + TextStyle, all '
+              'non-const — previously this signal was discarded entirely',
+        );
+      },
+    );
   });
 }

@@ -23,8 +23,7 @@ class _ArrowConstReturnExampleState extends State<ArrowConstReturnExample> {
 class ArrowHelperRootExample extends StatefulWidget {
   const ArrowHelperRootExample({super.key});
   @override
-  State<ArrowHelperRootExample> createState() =>
-      _ArrowHelperRootExampleState();
+  State<ArrowHelperRootExample> createState() => _ArrowHelperRootExampleState();
 }
 
 class _ArrowHelperRootExampleState extends State<ArrowHelperRootExample> {

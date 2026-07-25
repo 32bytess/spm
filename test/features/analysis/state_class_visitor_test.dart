@@ -1,4 +1,4 @@
-import 'package:spm/features/analysis/domain/entities/analysis_result_entity.dart';
+import 'package:spm/src/features/analysis/domain/entities/analysis_result_entity.dart';
 import 'package:test/test.dart';
 
 import 'utils/test_helper.dart';
@@ -7,9 +7,7 @@ void main() {
   late List<AnalysisResultEntity> results;
 
   setUpAll(() async {
-    results = await getResultsForFixture(
-      'state_class_visitor/fixture.dart',
-    );
+    results = await getResultsForFixture('state_class_visitor/fixture.dart');
   });
 
   test('emits exactly one row per State<> subclass, not per setState call', () {

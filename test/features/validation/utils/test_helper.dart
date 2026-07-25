@@ -1,8 +1,8 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
-import 'package:spm/core/injection/cli_service_locator.dart';
-import 'package:spm/features/validation/domain/entities/validation_report.dart';
+import 'package:spm/src/core/injection/cli_service_locator.dart';
+import 'package:spm/src/features/validation/domain/entities/validation_report.dart';
 
 /// Absolute path of a file inside a validation fixture directory.
 String validationFixturePath(String dirName, String fileName) => p.join(

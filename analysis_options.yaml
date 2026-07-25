@@ -21,8 +21,8 @@ include: package:lints/recommended.yaml
 
 analyzer:
   exclude:
-    # Deliberately broken fixture for the validate command's compile check.
-    - test/fixtures/validation/noncompiling/**
+    # Fixtures include intentionally invalid and style-divergent inputs.
+    - test/fixtures/**
 
 # For more information about the core and recommended set of lints, see
 # https://dart.dev/go/core-lints

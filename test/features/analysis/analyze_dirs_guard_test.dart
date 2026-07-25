@@ -8,9 +8,9 @@ integration test for the broken-file guard and instanceId stability:
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
-import 'package:spm/core/injection/cli_service_locator.dart';
-import 'package:spm/features/analysis/domain/entities/analysis_event.dart';
-import 'package:spm/features/analysis/domain/entities/analysis_result_entity.dart';
+import 'package:spm/src/core/injection/cli_service_locator.dart';
+import 'package:spm/src/features/analysis/domain/entities/analysis_event.dart';
+import 'package:spm/src/features/analysis/domain/entities/analysis_result_entity.dart';
 import 'package:test/test.dart';
 
 import 'utils/test_helper.dart';
@@ -118,7 +118,9 @@ void main() {
 
   group('instanceId', () {
     test('hashes the root-relative path (machine-independent)', () async {
-      final results = await getResultsForFixture('build_tree/widget_count.dart');
+      final results = await getResultsForFixture(
+        'build_tree/widget_count.dart',
+      );
       expect(results, isNotEmpty);
       for (final r in results) {
         expect(p.isRelative(r.filePath), isTrue);

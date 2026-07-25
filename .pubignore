@@ -1,0 +1,9 @@
+CLAUDE.md
+wiki/
+memory/
+.claude/
+.agents/
+.codex/
+.dart_tool/
+build/
+coverage/
