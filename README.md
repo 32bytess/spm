@@ -15,38 +15,44 @@ For full documentation, please visit our [Project Wiki](https://github.com/alber
 ## Commands
 
 ```bash
-dart run bin/spm.dart analyze -o static.jsonl /path/to/flutter/project
-dart run bin/spm.dart validate --base base.dart --mutation mutation.dart --deps dependencies.dart --json
-dart run bin/spm.dart inject -j static.jsonl /path/to/flutter/project
-dart run bin/spm.dart run -j static.jsonl -r /path/to/flutter/project --flutter drive --target=integration_test/integration_test.dart
-dart run bin/spm.dart isolate -o isolated_widgets /path/to/flutter/project
+spm analyze -o static.jsonl /path/to/flutter/project
+spm validate --base base.dart --mutation mutation.dart --deps dependencies.dart --json
+spm inject -j static.jsonl /path/to/flutter/project
+spm run -j static.jsonl -r /path/to/flutter/project --flutter drive --target=integration_test/integration_test.dart
+spm isolate -o isolated_widgets /path/to/flutter/project
 ```
 
 ## Installation
 
-Use SPM as a Git dependency from a Flutter project:
-
-```yaml
-dev_dependencies:
-  spm:
-    git:
-      url: https://github.com/albertoodev/spm.git
-```
-
-Then run:
+Install the CLI globally:
 
 ```bash
-flutter pub get
+dart pub global activate spm
 ```
+
+Or add it to a Flutter project for local use:
+
+```bash
+flutter pub add dev:spm
+dart run spm:spm analyze -o static.jsonl /path/to/flutter/project
+```
+
+Flutter code that is instrumented by SPM imports the public API with
+`import 'package:spm/spm.dart';`.
 
 ## Repository Layout
 
 ```text
 bin/        CLI entry point
-lib/        SPM implementation
+lib/spm.dart public Flutter integration API
+lib/src/    SPM implementation
 test/       unit tests and fixtures
 ```
 
 ## Related Artifact
 
 SPM can be used on its own or together with the companion `benchmark_container` repository, which contains a benchmark harness, sample corpus, measured dataset artifacts, and modeling scripts.
+
+## Contributing
+
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the [Project Wiki](https://github.com/albertoodev/spm/wiki/Contributing).

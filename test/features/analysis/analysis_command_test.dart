@@ -3,14 +3,14 @@ import 'dart:io';
 import 'package:args/command_runner.dart';
 import 'package:dartz/dartz.dart';
 import 'package:path/path.dart' as p;
-import 'package:spm/core/errors/failures.dart';
-import 'package:spm/core/injection/cli_service_locator.dart';
-import 'package:spm/core/types.dart';
-import 'package:spm/features/analysis/domain/repositories/analysis_repository.dart';
-import 'package:spm/features/analysis/domain/use_cases/analyze_use_case.dart';
-import 'package:spm/features/analysis/domain/use_cases/save_result_use_case.dart';
-import 'package:spm/features/analysis/presentation/analysis_command.dart';
-import 'package:spm/runner.dart';
+import 'package:spm/src/core/errors/failures.dart';
+import 'package:spm/src/core/injection/cli_service_locator.dart';
+import 'package:spm/src/core/types.dart';
+import 'package:spm/src/features/analysis/domain/repositories/analysis_repository.dart';
+import 'package:spm/src/features/analysis/domain/use_cases/analyze_use_case.dart';
+import 'package:spm/src/features/analysis/domain/use_cases/save_result_use_case.dart';
+import 'package:spm/src/features/analysis/presentation/analysis_command.dart';
+import 'package:spm/src/runner.dart';
 import 'package:test/test.dart';
 
 void main() {

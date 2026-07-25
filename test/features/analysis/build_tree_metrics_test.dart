@@ -9,7 +9,7 @@ integration test for :
   - helperMaxWidgetNestingDepth
   - treeCyclomaticComplexity
 */
-import 'package:spm/features/analysis/domain/entities/analysis_result_entity.dart';
+import 'package:spm/src/features/analysis/domain/entities/analysis_result_entity.dart';
 import 'package:test/test.dart';
 
 import 'utils/test_helper.dart';
@@ -465,8 +465,7 @@ void main() {
         );
       });
 
-      test('treeNonConstWidgetCount counts non-const widgets in child build()',
-          () {
+      test('treeNonConstWidgetCount counts non-const widgets in child build()', () {
         final noRootConst = childResults.firstWhere(
           (r) => r.stateClassName == '_ChildWidgetNoRootConstExampleState',
         );
@@ -531,30 +530,31 @@ void main() {
       });
 
       test(
-          'treeConstWidgetCount covers full tree but excludes helper method widgets',
-          () {
-        final noRootConst = childResults.firstWhere(
-          (r) => r.stateClassName == '_ChildWidgetNoRootConstExampleState',
-        );
-        expect(
-          noRootConst.treeConstWidgetCount,
-          equals(2),
-          reason:
-              'root build: 0 const; child build: Text(a) + Text(b) = 2; '
-              'root helper Placeholder and child helper Icon are NOT counted',
-        );
+        'treeConstWidgetCount covers full tree but excludes helper method widgets',
+        () {
+          final noRootConst = childResults.firstWhere(
+            (r) => r.stateClassName == '_ChildWidgetNoRootConstExampleState',
+          );
+          expect(
+            noRootConst.treeConstWidgetCount,
+            equals(2),
+            reason:
+                'root build: 0 const; child build: Text(a) + Text(b) = 2; '
+                'root helper Placeholder and child helper Icon are NOT counted',
+          );
 
-        final withRootConst = childResults.firstWhere(
-          (r) => r.stateClassName == '_ChildWidgetWithRootConstExampleState',
-        );
-        expect(
-          withRootConst.treeConstWidgetCount,
-          equals(3),
-          reason:
-              'root build: const Text = 1; child build: Text(a) + Text(b) = 2; total = 3; '
-              'root helper Placeholder and child helper Icon are NOT counted',
-        );
-      });
+          final withRootConst = childResults.firstWhere(
+            (r) => r.stateClassName == '_ChildWidgetWithRootConstExampleState',
+          );
+          expect(
+            withRootConst.treeConstWidgetCount,
+            equals(3),
+            reason:
+                'root build: const Text = 1; child build: Text(a) + Text(b) = 2; total = 3; '
+                'root helper Placeholder and child helper Icon are NOT counted',
+          );
+        },
+      );
     });
 
     test('treeCyclomaticComplexity', () {

@@ -29,7 +29,12 @@ class _MyStatefulState extends State<MyStateful> {
         ...buildExternalItems(context),
         CustomPaint(painter: ExternalPainter()),
         DecoratedBox(decoration: buildExternalDecoration()),
-        Container(decoration: BoxDecoration(shape: BoxShape.circle, border: ExternalShape())),
+        Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: ExternalShape(),
+          ),
+        ),
         ElevatedButton(onPressed: _increment, child: const Text('Add')),
       ],
     );

@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:spm/core/injection/cli_service_locator.dart';
-import 'package:spm/runner.dart';
+import 'package:spm/src/core/injection/cli_service_locator.dart';
+import 'package:spm/src/runner.dart';
 import 'package:test/test.dart';
 
 import 'utils/test_helper.dart';
@@ -29,12 +29,15 @@ void main() {
   Future<int?> runValidate(List<String> args) =>
       SpmRunner().run(['validate', ...args]);
 
-  String fixtureArg(String dir, String file) => validationFixturePath(dir, file);
+  String fixtureArg(String dir, String file) =>
+      validationFixturePath(dir, file);
 
   test('valid pair exits 0', () async {
     final exitCode = await runValidate([
-      '--base', fixtureArg('ok', 'base.dart'),
-      '--mutation', fixtureArg('ok', 'mutation.dart'),
+      '--base',
+      fixtureArg('ok', 'base.dart'),
+      '--mutation',
+      fixtureArg('ok', 'mutation.dart'),
     ]);
 
     expect(exitCode, 0);
@@ -42,8 +45,10 @@ void main() {
 
   test('hard violation exits 1', () async {
     final exitCode = await runValidate([
-      '--base', fixtureArg('content_changed', 'base.dart'),
-      '--mutation', fixtureArg('content_changed', 'mutation.dart'),
+      '--base',
+      fixtureArg('content_changed', 'base.dart'),
+      '--mutation',
+      fixtureArg('content_changed', 'mutation.dart'),
     ]);
 
     expect(exitCode, 1);
@@ -51,8 +56,10 @@ void main() {
 
   test('missing file is a usage error (64)', () async {
     final exitCode = await runValidate([
-      '--base', fixtureArg('ok', 'does_not_exist.dart'),
-      '--mutation', fixtureArg('ok', 'mutation.dart'),
+      '--base',
+      fixtureArg('ok', 'does_not_exist.dart'),
+      '--mutation',
+      fixtureArg('ok', 'mutation.dart'),
     ]);
 
     expect(exitCode, 64);
@@ -60,20 +67,22 @@ void main() {
 
   test('missing mandatory option is a usage error (64)', () async {
     final exitCode = await runValidate([
-      '--base', fixtureArg('ok', 'base.dart'),
+      '--base',
+      fixtureArg('ok', 'base.dart'),
     ]);
 
     expect(exitCode, 64);
   });
 
-  test('--json emits one parseable report with the documented keys',
-      () async {
+  test('--json emits one parseable report with the documented keys', () async {
     final capture = _StdoutCapture();
 
     final exitCode = await IOOverrides.runZoned(
       () => runValidate([
-        '--base', fixtureArg('content_changed', 'base.dart'),
-        '--mutation', fixtureArg('content_changed', 'mutation.dart'),
+        '--base',
+        fixtureArg('content_changed', 'base.dart'),
+        '--mutation',
+        fixtureArg('content_changed', 'mutation.dart'),
         '--json',
       ]),
       stdout: () => capture,

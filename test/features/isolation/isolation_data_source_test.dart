@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'package:test/test.dart';
 import 'package:path/path.dart' as p;
-import 'package:spm/features/isolation/data/data_sources/isolation_data_source_impl.dart';
-import 'package:spm/features/isolation/domain/entities/isolation_event.dart';
+import 'package:spm/src/features/isolation/data/data_sources/isolation_data_source_impl.dart';
+import 'package:spm/src/features/isolation/domain/entities/isolation_event.dart';
 
 void main() {
   late IsolationDataSourceImpl dataSource;
@@ -71,7 +71,10 @@ void main() {
 
     // StatefulWidget children must include their companion State class
     expect(content, contains('class ExternalStateful extends StatefulWidget'));
-    expect(content, contains('class _ExternalStatefulState extends State<ExternalStateful>'));
+    expect(
+      content,
+      contains('class _ExternalStatefulState extends State<ExternalStateful>'),
+    );
 
     // Widget subclassing a custom base (not directly a Flutter widget) is detected
     expect(content, contains('class ExternalCard'));
@@ -102,27 +105,30 @@ void main() {
     expect(content, contains("import 'package:flutter/cupertino.dart';"));
   });
 
-  test('should replace image widgets with SizedBox but preserve other widgets', () async {
-    final stream = dataSource.isolate(
-      directories: [testProjectDir],
-      outputDir: outputDir,
-    );
+  test(
+    'should replace image widgets with SizedBox but preserve other widgets',
+    () async {
+      final stream = dataSource.isolate(
+        directories: [testProjectDir],
+        outputDir: outputDir,
+      );
 
-    await stream.drain();
+      await stream.drain();
 
-    final builderIsolatedFile = Directory(p.join(outputDir, 'State'))
-        .listSync(recursive: false)
-        .whereType<File>()
-        .firstWhere((f) => f.path.contains('BuilderTestWidget'));
+      final builderIsolatedFile = Directory(p.join(outputDir, 'State'))
+          .listSync(recursive: false)
+          .whereType<File>()
+          .firstWhere((f) => f.path.contains('BuilderTestWidget'));
 
-    final content = builderIsolatedFile.readAsStringSync();
+      final content = builderIsolatedFile.readAsStringSync();
 
-    // Image.asset(...) should be replaced with the placeholder
-    expect(content, contains("Image.asset('assets/placeholder.png')"));
+      // Image.asset(...) should be replaced with the placeholder
+      expect(content, contains("Image.asset('assets/placeholder.png')"));
 
-    // Placeholder() is Flutter core (not in image set) — kept as-is
-    expect(content, contains('const Placeholder()'));
-  });
+      // Placeholder() is Flutter core (not in image set) — kept as-is
+      expect(content, contains('const Placeholder()'));
+    },
+  );
 
   test('should preserve parameter types in inline builders', () async {
     final stream = dataSource.isolate(

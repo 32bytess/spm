@@ -4,7 +4,7 @@ integration test for invocation-free helper references: method tear-offs
 functions must be counted and their bodies analyzed; plain widget fields
 (synthetic getters) must not.
 */
-import 'package:spm/features/analysis/domain/entities/analysis_result_entity.dart';
+import 'package:spm/src/features/analysis/domain/entities/analysis_result_entity.dart';
 import 'package:test/test.dart';
 
 import 'utils/test_helper.dart';
@@ -33,7 +33,8 @@ void main() {
       expect(
         byName('_TearOffExampleState').helperWidgetCount,
         equals(2),
-        reason: '_buildRow -> Padding + Text (EdgeInsets value object excluded)',
+        reason:
+            '_buildRow -> Padding + Text (EdgeInsets value object excluded)',
       );
     });
 
@@ -64,10 +65,7 @@ void main() {
 
   group('top-level widget function', () {
     test('is counted and resolved outside any class', () {
-      expect(
-        byName('_TopLevelFnExampleState').helperReferenceCount,
-        equals(1),
-      );
+      expect(byName('_TopLevelFnExampleState').helperReferenceCount, equals(1));
       expect(
         byName('_TopLevelFnExampleState').helperWidgetCount,
         equals(2),
@@ -87,10 +85,7 @@ void main() {
             'a field reference resolves to a synthetic getter and must not '
             'count as a helper',
       );
-      expect(
-        byName('_FieldWidgetExampleState').helperWidgetCount,
-        equals(0),
-      );
+      expect(byName('_FieldWidgetExampleState').helperWidgetCount, equals(0));
     });
   });
 }

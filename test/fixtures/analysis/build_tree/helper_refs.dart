@@ -2,10 +2,7 @@ import 'package:flutter/material.dart';
 
 // A top-level widget function: a helper that lives outside any class.
 Widget buildBanner() {
-  return DecoratedBox(
-    decoration: const BoxDecoration(),
-    child: Text('banner'),
-  );
+  return DecoratedBox(decoration: const BoxDecoration(), child: Text('banner'));
 }
 
 // Helper referenced as a METHOD TEAR-OFF: items.map(_buildRow) — no

@@ -1,5 +1,5 @@
-import 'package:spm/core/injection/cli_service_locator.dart';
-import 'package:spm/features/validation/domain/entities/validation_report.dart';
+import 'package:spm/src/core/injection/cli_service_locator.dart';
+import 'package:spm/src/features/validation/domain/entities/validation_report.dart';
 import 'package:test/test.dart';
 
 import 'utils/test_helper.dart';

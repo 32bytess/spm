@@ -14,9 +14,6 @@ class _SampleWidgetState extends State<SampleWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return KeyboardListener(
-      focusNode: focusNode,
-      child: const Text('Header'),
-    );
+    return KeyboardListener(focusNode: focusNode, child: const Text('Header'));
   }
 }

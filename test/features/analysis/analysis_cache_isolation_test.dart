@@ -1,9 +1,9 @@
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
-import 'package:spm/core/injection/cli_service_locator.dart';
-import 'package:spm/features/analysis/domain/entities/analysis_event.dart';
-import 'package:spm/features/analysis/domain/entities/analysis_result_entity.dart';
+import 'package:spm/src/core/injection/cli_service_locator.dart';
+import 'package:spm/src/features/analysis/domain/entities/analysis_event.dart';
+import 'package:spm/src/features/analysis/domain/entities/analysis_result_entity.dart';
 import 'package:test/test.dart';
 
 void main() {
