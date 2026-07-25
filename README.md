@@ -52,3 +52,7 @@ test/       unit tests and fixtures
 ## Related Artifact
 
 SPM can be used on its own or together with the companion `benchmark_container` repository, which contains a benchmark harness, sample corpus, measured dataset artifacts, and modeling scripts.
+
+## Contributing
+
+Contributions are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.md) and the [Project Wiki](https://github.com/albertoodev/spm/wiki/Contributing).
