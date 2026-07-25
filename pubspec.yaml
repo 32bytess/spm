@@ -1,6 +1,6 @@
 name: spm
 description: Unified static analysis and runtime profiling for Flutter State rebuild triggers.
-version: 0.0.1
+version: 0.0.2
 repository: https://github.com/albertoodev/spm
 issue_tracker: https://github.com/albertoodev/spm/issues
 documentation: https://github.com/albertoodev/spm/wiki
@@ -18,7 +18,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  analyzer: ^13.0.0
+  analyzer: ">=13.0.0 <15.0.0"
   args: ^2.7.0
   path: ^1.9.0
   dartz: ^0.10.1

@@ -7,6 +7,13 @@ import 'spm_profiler.dart';
 ///
 /// Import this class with `package:spm/spm.dart`.
 abstract class SpmState<T extends StatefulWidget> extends State<T> {
+  /// Creates an SPM-aware [State] for subclasses.
+  ///
+  /// `SpmState` is abstract and is intended to be extended instead of
+  /// instantiated directly.
+  @protected
+  SpmState();
+
   /// Unique ID for this state instance.
   String get instanceId;
 

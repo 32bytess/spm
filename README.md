@@ -11,6 +11,7 @@ It supports rebuild-performance analysis workflows by providing:
 - JSONL outputs for downstream dataset construction and modeling.
 
 For full documentation, please visit our [Project Wiki](https://github.com/albertoodev/spm/wiki).
+The package is published on [pub.dev](https://pub.dev/packages/spm).
 
 ## Commands
 
@@ -39,6 +40,8 @@ dart run spm:spm analyze -o static.jsonl /path/to/flutter/project
 
 Flutter code that is instrumented by SPM imports the public API with
 `import 'package:spm/spm.dart';`.
+
+See [example/spm_state_example.dart](example/spm_state_example.dart) for the minimal public API usage.
 
 ## Repository Layout
 
