@@ -2,3 +2,4 @@
 library;
 
 export 'src/features/profiler/presentation/spm_state.dart';
+export 'src/features/profiler/presentation/spm_profiler.dart';
