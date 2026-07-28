@@ -1,10 +1,11 @@
-# State Performance Metrics (SPM)
+# Scope Performance Metrics (SPM)
 
 SPM is a Dart/Flutter command-line tool for analyzing Flutter rebuild scopes, validating structure-only widget mutations, and collecting profile-mode rebuild measurements.
 
 It supports rebuild-performance analysis workflows by providing:
 
-- static feature extraction from Flutter `State.build()` trees;
+- static feature extraction from every rebuild scope — `State.build()` trees, consumer widgets, and
+  the builder callbacks of `BlocBuilder`, `Consumer`, `Obx`, and friends;
 - recursive traversal of reachable helper methods and custom child widgets;
 - validation of base/mutation pairs for structure-only changes;
 - temporary profiler injection for profile-mode rebuild measurement;
@@ -17,6 +18,7 @@ The package is published on [pub.dev](https://pub.dev/packages/spm).
 
 ```bash
 spm analyze -o static.jsonl /path/to/flutter/project
+spm analyze -o static.jsonl -s State /path/to/flutter/project   # State scopes only
 spm validate --base base.dart --mutation mutation.dart --deps dependencies.dart --json
 spm inject -j static.jsonl /path/to/flutter/project
 spm run -j static.jsonl -r /path/to/flutter/project --flutter drive --target=integration_test/integration_test.dart

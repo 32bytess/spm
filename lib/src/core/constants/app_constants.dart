@@ -61,6 +61,43 @@ class AppConstants {
     'Flow',
   };
 
+  /// Widgets whose builder callback is its own rebuild scope: the callback is
+  /// re-invoked by the state-management package without the enclosing
+  /// `build()` running again.
+  static const Set<String> builderScopeWidgets = {
+    'Consumer',
+    'Selector',
+    'BlocBuilder',
+    'BlocSelector',
+    'BlocConsumer',
+    'Obx',
+    'GetX',
+    'GetBuilder',
+    'Observer',
+  };
+
+  /// Subset of [builderScopeWidgets] that also accepts the builder as the
+  /// first positional argument (e.g. `Obx(() => ...)`).
+  static const Set<String> positionalBuilderScopeWidgets = {
+    'Obx',
+    'GetX',
+    'GetBuilder',
+    'Observer',
+  };
+
+  /// Scope type recorded for Flutter `State` subclasses.
+  static const String stateScopeType = 'State';
+
+  /// Scope type recorded for Riverpod/Hooks consumer widgets.
+  static const String consumerWidgetScopeType = 'ConsumerWidget';
+
+  /// Every scope type `analyze` and `isolate` can report.
+  static const Set<String> rebuildScopeTypes = {
+    stateScopeType,
+    consumerWidgetScopeType,
+    ...builderScopeWidgets,
+  };
+
   static const String spmStateImportLine = "import 'package:spm/spm.dart';";
 
   static const String spmStateClassName = 'SpmState';

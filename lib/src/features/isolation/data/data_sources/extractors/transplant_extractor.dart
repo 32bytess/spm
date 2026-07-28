@@ -2,6 +2,7 @@ import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/session.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:spm/src/core/errors/exceptions.dart';
+import 'package:spm/src/features/analysis/data/data_sources/extensions/state_class_detector.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonizer.dart';
 import 'package:spm/src/features/isolation/data/data_sources/sets/isolation_match_set.dart';
 import 'package:spm/src/features/isolation/data/data_sources/visitors/dependency_extractor_visitor.dart';
@@ -135,7 +136,7 @@ class TransplantExtractor {
       }
 
       // Handle the build method and its parameters
-      final buildMethod = RebuildScopeVisitor.findBuildMethod(scopeNode);
+      final buildMethod = findBuildMethod(scopeNode);
       if (buildMethod != null) {
         processedKeys.add('${result.path}::build');
         if (buildMethod.parameters != null) {

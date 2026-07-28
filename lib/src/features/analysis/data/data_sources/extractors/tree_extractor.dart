@@ -9,7 +9,7 @@ import 'package:spm/src/core/errors/exceptions.dart';
 import 'package:spm/src/core/types.dart';
 import 'package:spm/src/features/analysis/data/data_sources/extensions/ast_node_extensions.dart';
 
-import '../sets/state_class_instance_set.dart';
+import '../sets/rebuild_scope_instance_set.dart';
 import '../sets/tree_features_set.dart';
 import '../visitors/build_metrics_visitor.dart';
 
@@ -38,35 +38,40 @@ class TreeExtractor {
   final _libraryCache = <String, _LibraryIndex?>{};
 
   Future<TreeFeaturesSet> extract(
-    StateClassInstance state, {
+    RebuildScopeInstance scope, {
     required AnalysisContextCollection collection,
   }) async {
     try {
       final acc = _MetricsAccumulator();
 
-      final buildMethod = state.buildMethod;
-      if (buildMethod == null) return acc.toResult();
+      final body = scope.body;
+      if (body == null) return acc.toResult();
 
       // Dedup sets shared across the whole traversal.
       final visitedClasses = <String>{}; // build bodies, keyed libraryUri#class
       final analyzedHelpers = <String>{}; // helper bodies, keyed scope#member
       final queue = Queue<_ChildWork>();
 
-      // --- Root State class: build() body ---
-      acc.buildCc += buildMethod.body.cyclomaticComplexity();
+      // --- Root scope body: a build() body or a builder callback ---
+      acc.buildCc += body.cyclomaticComplexity();
       final rootVisitor = BuildMetricsVisitor();
-      buildMethod.body.accept(rootVisitor);
+      body.accept(rootVisitor);
       acc.mergeVisitor(rootVisitor, isRoot: true);
 
-      final rootElement = state.classDeclaration.declaredFragment?.element;
+      final declaringClass = scope.declaringClass;
+      final rootElement = declaringClass?.declaredFragment?.element;
       final rootClassId = _classId(rootElement);
       final rootLibraryUri = rootElement?.library.identifier ?? '<unknown>';
       visitedClasses.add(rootClassId);
 
-      // Root helpers (resolved from the root ClassDeclaration AST directly).
+      // Root helpers (resolved from the declaring ClassDeclaration AST
+      // directly). A scope outside any class has no name-based fallback
+      // scope; helper references that resolved to an element still work.
       await _analyzeHelpers(
         refs: rootVisitor.helperRefs,
-        methodsByName: _methodsOf(state.classDeclaration),
+        methodsByName: declaringClass == null
+            ? const {}
+            : _methodsOf(declaringClass),
         classId: rootClassId,
         libraryUri: rootLibraryUri,
         collection: collection,

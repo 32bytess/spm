@@ -3,7 +3,9 @@ import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/diagnostic/diagnostic.dart' as diag;
 import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:spm/src/core/errors/exceptions.dart';
-import 'package:spm/src/features/analysis/data/data_sources/visitors/state_class_visitor.dart';
+import 'package:spm/src/core/constants/app_constants.dart';
+import 'package:spm/src/features/analysis/data/data_sources/sets/rebuild_scope_instance_set.dart';
+import 'package:spm/src/features/analysis/data/data_sources/visitors/rebuild_scope_analysis_visitor.dart';
 import 'package:spm/src/features/validation/domain/entities/validation_report.dart';
 
 import 'comparators/content_comparator.dart';
@@ -58,23 +60,21 @@ class ValidationDataSourceImpl implements ValidationDataSource {
       );
     }
 
-    final baseStates = StateClassVisitor(baseResult);
-    final mutationStates = StateClassVisitor(mutationResult);
-    baseResult.unit.accept(baseStates);
-    mutationResult.unit.accept(mutationStates);
+    final baseStates = _stateScopesOf(baseResult);
+    final mutationStates = _stateScopesOf(mutationResult);
 
-    if (baseStates.instances.isEmpty) {
+    if (baseStates.isEmpty) {
       throw ValidationException('No State subclass found in base: $basePath');
     }
-    final baseState = baseStates.instances.first;
-    final mutationState = mutationStates.instances.firstOrNull;
+    final baseState = baseStates.first;
+    final mutationState = mutationStates.firstOrNull;
 
     final violations = <Violation>[
       ..._importComparator.compare(baseResult, mutationResult),
       if (mutationState != null)
         ..._frozenMemberComparator.compare(
-          baseState.classDeclaration,
-          mutationState.classDeclaration,
+          baseState.declaringClass!,
+          mutationState.declaringClass!,
         )
       else
         const Violation(
@@ -96,6 +96,16 @@ class ValidationDataSourceImpl implements ValidationDataSource {
       baseInstanceId: baseState.instanceId,
       mutationInstanceId: mutationState?.instanceId,
     );
+  }
+
+  /// The `State` subclasses of a unit. Validation compares State pairs only;
+  /// the other rebuild scopes the visitor reports are irrelevant here.
+  List<RebuildScopeInstance> _stateScopesOf(ResolvedUnitResult result) {
+    final visitor = RebuildScopeAnalysisVisitor(result);
+    result.unit.accept(visitor);
+    return visitor.instances
+        .where((i) => i.scopeType == AppConstants.stateScopeType)
+        .toList();
   }
 
   /// Check 5 — the mutation must resolve with no ERROR diagnostics against

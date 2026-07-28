@@ -6,8 +6,12 @@ abstract class AnalysisDataSource {
   ///
   /// Parameters:
   /// - [repoDirs]: A list of directory paths where the repositories are located.
+  /// - [scopeTypes]: Rebuild scope types to keep; null keeps every type.
   ///
-  AnalysisEventStream analyzeDirs(RepositoryPaths repoDirs);
+  AnalysisEventStream analyzeDirs(
+    RepositoryPaths repoDirs, {
+    Set<String>? scopeTypes,
+  });
 
   /// Saves the analysis results to a specified file path.
   ///

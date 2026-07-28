@@ -1,12 +1,13 @@
 import '../../domain/entities/analysis_result_entity.dart';
-import '../data_sources/sets/state_class_instance_set.dart';
+import '../data_sources/sets/rebuild_scope_instance_set.dart';
 import '../data_sources/sets/tree_features_set.dart';
 
 class AnalysisResultModel extends AnalysisResultEntity {
   AnalysisResultModel({
     required super.instanceId,
     required super.filePath,
-    required super.stateClassName,
+    required super.scopeName,
+    required super.scopeType,
     required super.treeNonConstWidgetCount,
     required super.treeMaxWidgetNestingDepth,
     required super.treeListRenderingStrategy,
@@ -27,7 +28,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
     return AnalysisResultModel(
       instanceId: entity.instanceId,
       filePath: entity.filePath,
-      stateClassName: entity.stateClassName,
+      scopeName: entity.scopeName,
+      scopeType: entity.scopeType,
       treeNonConstWidgetCount: entity.treeNonConstWidgetCount,
       treeMaxWidgetNestingDepth: entity.treeMaxWidgetNestingDepth,
       treeListRenderingStrategy: entity.treeListRenderingStrategy,
@@ -49,7 +51,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
     return {
       'instanceId': instanceId,
       'filePath': filePath,
-      'stateClassName': stateClassName,
+      'scopeName': scopeName,
+      'scopeType': scopeType,
       'treeNonConstWidgetCount': treeNonConstWidgetCount,
       'treeMaxWidgetNestingDepth': treeMaxWidgetNestingDepth,
       'treeListRenderingStrategy': treeListRenderingStrategy,
@@ -69,13 +72,14 @@ class AnalysisResultModel extends AnalysisResultEntity {
 
   factory AnalysisResultModel.fromTreeFeatures({
     required TreeFeaturesSet treeFeatures,
-    required StateClassInstance state,
+    required RebuildScopeInstance scope,
     required String filePath,
   }) {
     return AnalysisResultModel(
-      instanceId: state.instanceId,
+      instanceId: scope.instanceId,
       filePath: filePath,
-      stateClassName: state.stateClassName,
+      scopeName: scope.scopeName,
+      scopeType: scope.scopeType,
       treeNonConstWidgetCount: treeFeatures.treeNonConstWidgetCount,
       treeMaxWidgetNestingDepth: treeFeatures.treeMaxWidgetNestingDepth,
       treeListRenderingStrategy: treeFeatures.treeListRenderingStrategy,

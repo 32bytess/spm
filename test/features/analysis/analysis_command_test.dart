@@ -68,7 +68,10 @@ void main() {
 
 class _FailingAnalysisRepository implements AnalysisRepository {
   @override
-  AnalysisStream analyze(RepositoryPaths repoDirs) async* {
+  AnalysisStream analyze(
+    RepositoryPaths repoDirs, {
+    Set<String>? scopeTypes,
+  }) async* {
     yield Left(AnalysisFailure('synthetic analysis failure'));
   }
 

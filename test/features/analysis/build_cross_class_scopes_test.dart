@@ -20,7 +20,7 @@ void main() {
 
     setUpAll(() {
       crossClass = results.firstWhere(
-        (r) => r.stateClassName == '_CrossClassExampleState',
+        (r) => r.scopeName == '_CrossClassExampleState',
       );
     });
 
@@ -68,7 +68,7 @@ void main() {
 
     setUpAll(() {
       helperScope = results.firstWhere(
-        (r) => r.stateClassName == '_HelperIterationScopeExampleState',
+        (r) => r.scopeName == '_HelperIterationScopeExampleState',
       );
     });
 
@@ -118,7 +118,7 @@ void main() {
 
     setUpAll(() {
       transitive = results.firstWhere(
-        (r) => r.stateClassName == '_TransitiveHelperExampleState',
+        (r) => r.scopeName == '_TransitiveHelperExampleState',
       );
     });
 
@@ -151,7 +151,7 @@ void main() {
 
   test('tree depth composes each custom-child placement exactly once', () {
     final depthChain = results.firstWhere(
-      (r) => r.stateClassName == '_DepthChainExampleState',
+      (r) => r.scopeName == '_DepthChainExampleState',
     );
 
     expect(

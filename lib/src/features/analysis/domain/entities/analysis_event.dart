@@ -14,13 +14,19 @@ class AnalysisSummaryEvent extends AnalysisEvent {
   /// Files skipped because they contain compile errors: their unresolved
   /// types would silently zero out every feature, so no rows are emitted.
   final int filesSkipped;
-  final int stateClassesFound;
+
+  /// Rebuild scopes discovered, before any `--scope-types` filtering.
+  final int scopesFound;
+
+  /// Discovered scopes per type (`State`, `ConsumerWidget`, `BlocBuilder`, …).
+  final Map<String, int> scopesByType;
   final int keptRows;
 
   AnalysisSummaryEvent({
     required this.filesScanned,
     required this.filesSkipped,
-    required this.stateClassesFound,
+    required this.scopesFound,
+    required this.scopesByType,
     required this.keptRows,
   });
 }

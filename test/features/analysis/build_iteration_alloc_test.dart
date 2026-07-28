@@ -14,8 +14,8 @@ void main() {
   group('iterationWidgetCount', () {
     late List<AnalysisResultEntity> results;
 
-    AnalysisResultEntity byName(String stateClassName) =>
-        results.firstWhere((r) => r.stateClassName == stateClassName);
+    AnalysisResultEntity byName(String scopeName) =>
+        results.firstWhere((r) => r.scopeName == scopeName);
 
     setUpAll(() async {
       results = await getResultsForFixture('build_tree/iteration_widgets.dart');
@@ -77,7 +77,7 @@ void main() {
         'build_tree/iteration_widgets.dart',
       );
       final r = results.firstWhere(
-        (x) => x.stateClassName == '_FlatConstValueObjectExampleState',
+        (x) => x.scopeName == '_FlatConstValueObjectExampleState',
       );
       expect(
         r.valueObjectAllocCount,
@@ -95,7 +95,7 @@ void main() {
           'build_tree/value_objects.dart',
         );
         final r = results.firstWhere(
-          (x) => x.stateClassName == '_ValueObjectExampleState',
+          (x) => x.scopeName == '_ValueObjectExampleState',
         );
         expect(
           r.valueObjectAllocCount,

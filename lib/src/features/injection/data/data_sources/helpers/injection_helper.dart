@@ -199,7 +199,9 @@ class InjectionHelper {
     final pairs = <(ClassDeclaration, JsonRecord)>[];
 
     for (final target in targets) {
-      final className = target['stateClassName'] as String;
+      // `stateClassName` is the pre-rebuild-scope name of the same column.
+      final className =
+          (target['scopeName'] ?? target['stateClassName']) as String;
       final visitor = StateClassFinderVisitor(className);
       result.unit.accept(visitor);
 

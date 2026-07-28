@@ -20,8 +20,12 @@ void main() {
     );
   });
 
-  test('stateClassName is the State subclass name, not the method name', () {
-    final names = results.map((r) => r.stateClassName).toSet();
+  test('scopeName is the State subclass name, not the method name', () {
+    final names = results.map((r) => r.scopeName).toSet();
     expect(names, containsAll(['_FooState', '_BarState']));
+  });
+
+  test('State subclasses are reported with the State scope type', () {
+    expect(results.map((r) => r.scopeType).toSet(), equals({'State'}));
   });
 }
