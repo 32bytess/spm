@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.1
+
+### Changed
+
+- Declared Android as the only supported platform, so the pub.dev package page lists Android alone.
+
 ## 0.1.0
 
 `analyze` now extracts metrics from every rebuild scope, not only `State` subclasses.
