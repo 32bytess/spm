@@ -6,7 +6,7 @@ class AnalyzeUseCase {
 
   AnalyzeUseCase(this.repository);
 
-  AnalysisStream call(RepositoryPaths repoDirs) {
-    return repository.analyze(repoDirs);
+  AnalysisStream call(RepositoryPaths repoDirs, {Set<String>? scopeTypes}) {
+    return repository.analyze(repoDirs, scopeTypes: scopeTypes);
   }
 }

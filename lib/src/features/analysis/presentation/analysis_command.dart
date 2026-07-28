@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
+import 'package:spm/src/core/constants/app_constants.dart';
 import 'package:spm/src/core/errors/failures.dart';
 import 'package:spm/src/core/injection/cli_service_locator.dart';
 import 'package:spm/src/core/loggor/logger.dart';
@@ -18,8 +19,7 @@ class AnalysisCommand extends Command<int> {
   final name = 'analyze';
 
   @override
-  final description =
-      'Analyze Dart files and extract State class usage metrics.';
+  final description = 'Analyze Dart files and extract rebuild scope metrics.';
   AnalysisCommand({
     AnalyzeUseCase? analyzeUseCase,
     SaveResultUseCase? saveResultUseCase,
@@ -37,6 +37,14 @@ class AnalysisCommand extends Command<int> {
         abbr: 'o',
         help: 'Output file path for JSONL results (required).',
         mandatory: true,
+      )
+      ..addMultiOption(
+        'scope-types',
+        abbr: 's',
+        help:
+            'Rebuild scope types to extract. Defaults to all of: '
+            '${AppConstants.rebuildScopeTypes.join(', ')}.',
+        allowed: AppConstants.rebuildScopeTypes,
       );
   }
 
@@ -61,10 +69,14 @@ class AnalysisCommand extends Command<int> {
     }
     final verbose = argResults!['verbose'] as bool;
     final outputPath = argResults!['output'] as String;
+    final selectedTypes = argResults!['scope-types'] as List<String>;
+    // No selection means every scope type; an explicit list narrows it.
+    final scopeTypes = selectedTypes.isEmpty ? null : selectedTypes.toSet();
 
     if (verbose) {
       SpmLogger.logMessage('Analyzing directories: ${repoDirs.join(', ')}');
       SpmLogger.logMessage('Writing results to: $outputPath');
+      SpmLogger.logMessage('Scope types: ${scopeTypes?.join(', ') ?? 'all'}');
     }
 
     final analyzer = _analyzeUseCase ?? AnalysisDI.analyzeUseCase;
@@ -76,7 +88,7 @@ class AnalysisCommand extends Command<int> {
     );
     var analysisFailed = false;
 
-    await for (final event in analyzer.call(repoDirs)) {
+    await for (final event in analyzer.call(repoDirs, scopeTypes: scopeTypes)) {
       event.fold(
         (Failure failure) {
           analysisFailed = true;
@@ -88,7 +100,11 @@ class AnalysisCommand extends Command<int> {
         (result) {
           if (result is AnalysisSummaryEvent) {
             SpmLogger.logMessage(
-              'Scanned ${result.filesScanned} files (${result.filesSkipped} skipped with compile errors); found ${result.stateClassesFound} State subclasses; kept ${result.keptRows} rows.',
+              'Scanned ${result.filesScanned} files '
+              '(${result.filesSkipped} skipped with compile errors); '
+              'found ${result.scopesFound} rebuild scopes '
+              '(${_formatScopeBreakdown(result.scopesByType)}); '
+              'kept ${result.keptRows} rows.',
             );
           } else if (result is AnalysisDataEvent) {
             if (verbose) {
@@ -114,5 +130,16 @@ class AnalysisCommand extends Command<int> {
       );
       return 1;
     }, (_) => analysisFailed ? 1 : 0);
+  }
+
+  /// `State: 12, BlocBuilder: 3`, most frequent type first.
+  String _formatScopeBreakdown(Map<String, int> scopesByType) {
+    if (scopesByType.isEmpty) return 'none';
+    final entries = scopesByType.entries.toList()
+      ..sort((a, b) {
+        final byCount = b.value.compareTo(a.value);
+        return byCount != 0 ? byCount : a.key.compareTo(b.key);
+      });
+    return entries.map((e) => '${e.key}: ${e.value}').join(', ');
   }
 }

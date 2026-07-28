@@ -12,9 +12,15 @@ class AnalysisRepositoryImpl implements AnalysisRepository {
   AnalysisRepositoryImpl(this.analysisDataSource);
 
   @override
-  AnalysisStream analyze(RepositoryPaths repoDirs) async* {
+  AnalysisStream analyze(
+    RepositoryPaths repoDirs, {
+    Set<String>? scopeTypes,
+  }) async* {
     try {
-      final result = analysisDataSource.analyzeDirs(repoDirs);
+      final result = analysisDataSource.analyzeDirs(
+        repoDirs,
+        scopeTypes: scopeTypes,
+      );
       await for (final event in result) {
         yield Right(event);
       }

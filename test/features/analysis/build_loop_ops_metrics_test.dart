@@ -18,7 +18,7 @@ void main() {
   group('treeIterationCount — loops and O(N) collection ops', () {
     test('no loops and no O(N) ops — counter is zero', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_NoLoopsNoOpsExampleState',
+        (r) => r.scopeName == '_NoLoopsNoOpsExampleState',
       );
       expect(
         r.treeIterationCount,
@@ -30,7 +30,7 @@ void main() {
 
     test('single for-in loop counts as one linear op', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_SingleForLoopExampleState',
+        (r) => r.scopeName == '_SingleForLoopExampleState',
       );
       expect(
         r.treeIterationCount,
@@ -41,7 +41,7 @@ void main() {
 
     test('while + do-while each count as one linear op', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_WhileAndDoWhileExampleState',
+        (r) => r.scopeName == '_WhileAndDoWhileExampleState',
       );
       expect(
         r.treeIterationCount,
@@ -52,7 +52,7 @@ void main() {
 
     test('sort + where + map each count as one linear op', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_LinearOpsOnlyExampleState',
+        (r) => r.scopeName == '_LinearOpsOnlyExampleState',
       );
       expect(
         r.treeIterationCount,
@@ -63,7 +63,7 @@ void main() {
 
     test('for loop + forEach + reduce counts all three', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_MixedLoopsAndOpsExampleState',
+        (r) => r.scopeName == '_MixedLoopsAndOpsExampleState',
       );
       expect(
         r.treeIterationCount,
@@ -74,7 +74,7 @@ void main() {
 
     test('nested loops still count flat (one per construct)', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_NestedForLoopExampleState',
+        (r) => r.scopeName == '_NestedForLoopExampleState',
       );
       expect(
         r.treeIterationCount,
@@ -87,21 +87,21 @@ void main() {
   group('treeMaxIterationNestingDepth — nested vs sequential iteration', () {
     test('no iteration constructs — depth is zero', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_NoLoopsNoOpsExampleState',
+        (r) => r.scopeName == '_NoLoopsNoOpsExampleState',
       );
       expect(r.treeMaxIterationNestingDepth, equals(0));
     });
 
     test('single loop — depth is one', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_SingleForLoopExampleState',
+        (r) => r.scopeName == '_SingleForLoopExampleState',
       );
       expect(r.treeMaxIterationNestingDepth, equals(1));
     });
 
     test('sequential loops do not stack — depth stays one', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_WhileAndDoWhileExampleState',
+        (r) => r.scopeName == '_WhileAndDoWhileExampleState',
       );
       expect(
         r.treeMaxIterationNestingDepth,
@@ -112,7 +112,7 @@ void main() {
 
     test('chained collection ops do not stack — depth stays one', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_LinearOpsOnlyExampleState',
+        (r) => r.scopeName == '_LinearOpsOnlyExampleState',
       );
       expect(
         r.treeMaxIterationNestingDepth,
@@ -123,7 +123,7 @@ void main() {
 
     test('for inside for — depth is two', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_NestedForLoopExampleState',
+        (r) => r.scopeName == '_NestedForLoopExampleState',
       );
       expect(
         r.treeMaxIterationNestingDepth,
@@ -134,7 +134,7 @@ void main() {
 
     test('collection op inside a map callback — depth is two', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_NestedCollectionOpExampleState',
+        (r) => r.scopeName == '_NestedCollectionOpExampleState',
       );
       expect(
         r.treeMaxIterationNestingDepth,

@@ -38,7 +38,7 @@ void main() {
       );
 
       final singleWidget = widgetCountResults.firstWhere(
-        (r) => r.stateClassName == '_SingleWidgetExampleState',
+        (r) => r.scopeName == '_SingleWidgetExampleState',
       );
       expect(
         singleWidget.treeNonConstWidgetCount,
@@ -47,7 +47,7 @@ void main() {
       );
 
       final nestedWidgets = widgetCountResults.firstWhere(
-        (r) => r.stateClassName == '_NestedWidgetsExampleState',
+        (r) => r.scopeName == '_NestedWidgetsExampleState',
       );
       expect(
         nestedWidgets.treeNonConstWidgetCount,
@@ -57,7 +57,7 @@ void main() {
       );
 
       final manyWidgets = widgetCountResults.firstWhere(
-        (r) => r.stateClassName == '_ManyWidgetsExampleState',
+        (r) => r.scopeName == '_ManyWidgetsExampleState',
       );
       expect(
         manyWidgets.treeNonConstWidgetCount,
@@ -73,7 +73,7 @@ void main() {
           .toList();
 
       final singleWidget = widgetCountResults.firstWhere(
-        (r) => r.stateClassName == '_SingleWidgetExampleState',
+        (r) => r.scopeName == '_SingleWidgetExampleState',
       );
       expect(
         singleWidget.treeMaxWidgetNestingDepth,
@@ -82,7 +82,7 @@ void main() {
       );
 
       final nestedWidgets = widgetCountResults.firstWhere(
-        (r) => r.stateClassName == '_NestedWidgetsExampleState',
+        (r) => r.scopeName == '_NestedWidgetsExampleState',
       );
       expect(
         nestedWidgets.treeMaxWidgetNestingDepth,
@@ -91,7 +91,7 @@ void main() {
       );
 
       final manyWidgets = widgetCountResults.firstWhere(
-        (r) => r.stateClassName == '_ManyWidgetsExampleState',
+        (r) => r.scopeName == '_ManyWidgetsExampleState',
       );
       expect(
         manyWidgets.treeMaxWidgetNestingDepth,
@@ -112,7 +112,7 @@ void main() {
       );
 
       final allConst = constResults.firstWhere(
-        (r) => r.stateClassName == '_AllConstExampleState',
+        (r) => r.scopeName == '_AllConstExampleState',
       );
       expect(
         allConst.rootBuildReturnsConstWidget,
@@ -122,7 +122,7 @@ void main() {
       );
 
       final noConst = constResults.firstWhere(
-        (r) => r.stateClassName == '_NoConstExampleState',
+        (r) => r.scopeName == '_NoConstExampleState',
       );
       expect(
         noConst.rootBuildReturnsConstWidget,
@@ -132,7 +132,7 @@ void main() {
       );
 
       final mixedConst = constResults.firstWhere(
-        (r) => r.stateClassName == '_MixedConstExampleState',
+        (r) => r.scopeName == '_MixedConstExampleState',
       );
       expect(
         mixedConst.rootBuildReturnsConstWidget,
@@ -142,7 +142,7 @@ void main() {
       );
 
       final preambleClosure = constResults.firstWhere(
-        (r) => r.stateClassName == '_PreambleClosureConstExampleState',
+        (r) => r.scopeName == '_PreambleClosureConstExampleState',
       );
       expect(
         preambleClosure.rootBuildReturnsConstWidget,
@@ -159,7 +159,7 @@ void main() {
           .toList();
 
       final allConst = constResults.firstWhere(
-        (r) => r.stateClassName == '_AllConstExampleState',
+        (r) => r.scopeName == '_AllConstExampleState',
       );
       expect(
         allConst.treeConstWidgetCount,
@@ -170,7 +170,7 @@ void main() {
       );
 
       final noConst = constResults.firstWhere(
-        (r) => r.stateClassName == '_NoConstExampleState',
+        (r) => r.scopeName == '_NoConstExampleState',
       );
       expect(
         noConst.treeConstWidgetCount,
@@ -179,7 +179,7 @@ void main() {
       );
 
       final mixedConst = constResults.firstWhere(
-        (r) => r.stateClassName == '_MixedConstExampleState',
+        (r) => r.scopeName == '_MixedConstExampleState',
       );
       expect(
         mixedConst.treeConstWidgetCount,
@@ -189,7 +189,7 @@ void main() {
       );
 
       final preambleClosure = constResults.firstWhere(
-        (r) => r.stateClassName == '_PreambleClosureConstExampleState',
+        (r) => r.scopeName == '_PreambleClosureConstExampleState',
       );
       expect(
         preambleClosure.treeConstWidgetCount,
@@ -210,7 +210,7 @@ void main() {
       );
 
       final noHelpers = helperResults.firstWhere(
-        (r) => r.stateClassName == '_NoHelpersExampleState',
+        (r) => r.scopeName == '_NoHelpersExampleState',
       );
       expect(
         noHelpers.helperReferenceCount,
@@ -220,7 +220,7 @@ void main() {
       );
 
       final singleHelper = helperResults.firstWhere(
-        (r) => r.stateClassName == '_SingleHelperExampleState',
+        (r) => r.scopeName == '_SingleHelperExampleState',
       );
       expect(
         singleHelper.helperReferenceCount,
@@ -230,7 +230,7 @@ void main() {
       );
 
       final multipleHelpers = helperResults.firstWhere(
-        (r) => r.stateClassName == '_MultipleHelpersExampleState',
+        (r) => r.scopeName == '_MultipleHelpersExampleState',
       );
       expect(
         multipleHelpers.helperReferenceCount,
@@ -240,7 +240,7 @@ void main() {
       );
 
       final nonBuildNamed = helperResults.firstWhere(
-        (r) => r.stateClassName == '_NonBuildNamedHelperExampleState',
+        (r) => r.scopeName == '_NonBuildNamedHelperExampleState',
       );
       expect(
         nonBuildNamed.helperReferenceCount,
@@ -250,7 +250,7 @@ void main() {
       );
 
       final buildNamedNonWidget = helperResults.firstWhere(
-        (r) => r.stateClassName == '_BuildNamedNonWidgetExampleState',
+        (r) => r.scopeName == '_BuildNamedNonWidgetExampleState',
       );
       expect(
         buildNamedNonWidget.helperReferenceCount,
@@ -260,7 +260,7 @@ void main() {
       );
 
       final preambleHelper = helperResults.firstWhere(
-        (r) => r.stateClassName == '_PreambleHelperExampleState',
+        (r) => r.scopeName == '_PreambleHelperExampleState',
       );
       expect(
         preambleHelper.helperReferenceCount,
@@ -270,7 +270,7 @@ void main() {
       );
 
       final directReturn = helperResults.firstWhere(
-        (r) => r.stateClassName == '_DirectReturnHelperExampleState',
+        (r) => r.scopeName == '_DirectReturnHelperExampleState',
       );
       expect(
         directReturn.helperReferenceCount,
@@ -280,7 +280,7 @@ void main() {
       );
 
       final repeated = helperResults.firstWhere(
-        (r) => r.stateClassName == '_RepeatedHelperCallExampleState',
+        (r) => r.scopeName == '_RepeatedHelperCallExampleState',
       );
       expect(
         repeated.helperReferenceCount,
@@ -291,7 +291,7 @@ void main() {
       );
 
       final widgetListOp = helperResults.firstWhere(
-        (r) => r.stateClassName == '_WidgetListOpExampleState',
+        (r) => r.scopeName == '_WidgetListOpExampleState',
       );
       expect(
         widgetListOp.helperReferenceCount,
@@ -307,7 +307,7 @@ void main() {
       );
 
       final preambleClosure = helperResults.firstWhere(
-        (r) => r.stateClassName == '_PreambleClosureHelperExampleState',
+        (r) => r.scopeName == '_PreambleClosureHelperExampleState',
       );
       expect(
         preambleClosure.helperReferenceCount,
@@ -319,7 +319,7 @@ void main() {
       );
 
       final templateBuild = helperResults.firstWhere(
-        (r) => r.stateClassName == '_TemplateBuildCallExampleState',
+        (r) => r.scopeName == '_TemplateBuildCallExampleState',
       );
       expect(
         templateBuild.helperReferenceCount,
@@ -334,12 +334,12 @@ void main() {
           .toList();
 
       final noHelpers = helperResults.firstWhere(
-        (r) => r.stateClassName == '_NoHelpersExampleState',
+        (r) => r.scopeName == '_NoHelpersExampleState',
       );
       expect(noHelpers.helperWidgetCount, equals(0));
 
       final singleHelper = helperResults.firstWhere(
-        (r) => r.stateClassName == '_SingleHelperExampleState',
+        (r) => r.scopeName == '_SingleHelperExampleState',
       );
       expect(
         singleHelper.helperWidgetCount,
@@ -348,7 +348,7 @@ void main() {
       );
 
       final multipleHelpers = helperResults.firstWhere(
-        (r) => r.stateClassName == '_MultipleHelpersExampleState',
+        (r) => r.scopeName == '_MultipleHelpersExampleState',
       );
       expect(
         multipleHelpers.helperWidgetCount,
@@ -357,7 +357,7 @@ void main() {
       );
 
       final nonBuildNamed = helperResults.firstWhere(
-        (r) => r.stateClassName == '_NonBuildNamedHelperExampleState',
+        (r) => r.scopeName == '_NonBuildNamedHelperExampleState',
       );
       expect(
         nonBuildNamed.helperWidgetCount,
@@ -366,7 +366,7 @@ void main() {
       );
 
       final deepHelper = helperResults.firstWhere(
-        (r) => r.stateClassName == '_DeepHelperExampleState',
+        (r) => r.scopeName == '_DeepHelperExampleState',
       );
       expect(
         deepHelper.helperWidgetCount,
@@ -375,7 +375,7 @@ void main() {
       );
 
       final repeated = helperResults.firstWhere(
-        (r) => r.stateClassName == '_RepeatedHelperCallExampleState',
+        (r) => r.scopeName == '_RepeatedHelperCallExampleState',
       );
       expect(
         repeated.helperWidgetCount,
@@ -384,7 +384,7 @@ void main() {
       );
 
       final templateBuild = helperResults.firstWhere(
-        (r) => r.stateClassName == '_TemplateBuildCallExampleState',
+        (r) => r.scopeName == '_TemplateBuildCallExampleState',
       );
       expect(
         templateBuild.helperWidgetCount,
@@ -401,12 +401,12 @@ void main() {
           .toList();
 
       final noHelpers = helperResults.firstWhere(
-        (r) => r.stateClassName == '_NoHelpersExampleState',
+        (r) => r.scopeName == '_NoHelpersExampleState',
       );
       expect(noHelpers.helperMaxWidgetNestingDepth, equals(0));
 
       final singleHelper = helperResults.firstWhere(
-        (r) => r.stateClassName == '_SingleHelperExampleState',
+        (r) => r.scopeName == '_SingleHelperExampleState',
       );
       expect(
         singleHelper.helperMaxWidgetNestingDepth,
@@ -415,7 +415,7 @@ void main() {
       );
 
       final multipleHelpers = helperResults.firstWhere(
-        (r) => r.stateClassName == '_MultipleHelpersExampleState',
+        (r) => r.scopeName == '_MultipleHelpersExampleState',
       );
       expect(
         multipleHelpers.helperMaxWidgetNestingDepth,
@@ -424,7 +424,7 @@ void main() {
       );
 
       final nonBuildNamed = helperResults.firstWhere(
-        (r) => r.stateClassName == '_NonBuildNamedHelperExampleState',
+        (r) => r.scopeName == '_NonBuildNamedHelperExampleState',
       );
       expect(
         nonBuildNamed.helperMaxWidgetNestingDepth,
@@ -433,7 +433,7 @@ void main() {
       );
 
       final deepHelper = helperResults.firstWhere(
-        (r) => r.stateClassName == '_DeepHelperExampleState',
+        (r) => r.scopeName == '_DeepHelperExampleState',
       );
       expect(
         deepHelper.helperMaxWidgetNestingDepth,
@@ -442,7 +442,7 @@ void main() {
       );
 
       final repeated = helperResults.firstWhere(
-        (r) => r.stateClassName == '_RepeatedHelperCallExampleState',
+        (r) => r.scopeName == '_RepeatedHelperCallExampleState',
       );
       expect(
         repeated.helperMaxWidgetNestingDepth,
@@ -467,7 +467,7 @@ void main() {
 
       test('treeNonConstWidgetCount counts non-const widgets in child build()', () {
         final noRootConst = childResults.firstWhere(
-          (r) => r.stateClassName == '_ChildWidgetNoRootConstExampleState',
+          (r) => r.scopeName == '_ChildWidgetNoRootConstExampleState',
         );
         expect(
           noRootConst.treeNonConstWidgetCount,
@@ -478,7 +478,7 @@ void main() {
         );
 
         final withRootConst = childResults.firstWhere(
-          (r) => r.stateClassName == '_ChildWidgetWithRootConstExampleState',
+          (r) => r.scopeName == '_ChildWidgetWithRootConstExampleState',
         );
         expect(
           withRootConst.treeNonConstWidgetCount,
@@ -491,7 +491,7 @@ void main() {
 
       test('helperWidgetCount includes child widget helper bodies', () {
         final noRootConst = childResults.firstWhere(
-          (r) => r.stateClassName == '_ChildWidgetNoRootConstExampleState',
+          (r) => r.scopeName == '_ChildWidgetNoRootConstExampleState',
         );
         expect(
           noRootConst.helperWidgetCount,
@@ -507,7 +507,7 @@ void main() {
         );
 
         final withRootConst = childResults.firstWhere(
-          (r) => r.stateClassName == '_ChildWidgetWithRootConstExampleState',
+          (r) => r.scopeName == '_ChildWidgetWithRootConstExampleState',
         );
         expect(
           withRootConst.helperWidgetCount,
@@ -522,7 +522,7 @@ void main() {
             r.treeMaxWidgetNestingDepth,
             equals(4),
             reason:
-                '${r.stateClassName}: _DeepConstChild sits at depth 2 '
+                '${r.scopeName}: _DeepConstChild sits at depth 2 '
                 '(Column > child) and its build reaches internal depth 2 '
                 '(Column > Text) → absolute depth 2 + 2 = 4',
           );
@@ -533,7 +533,7 @@ void main() {
         'treeConstWidgetCount covers full tree but excludes helper method widgets',
         () {
           final noRootConst = childResults.firstWhere(
-            (r) => r.stateClassName == '_ChildWidgetNoRootConstExampleState',
+            (r) => r.scopeName == '_ChildWidgetNoRootConstExampleState',
           );
           expect(
             noRootConst.treeConstWidgetCount,
@@ -544,7 +544,7 @@ void main() {
           );
 
           final withRootConst = childResults.firstWhere(
-            (r) => r.stateClassName == '_ChildWidgetWithRootConstExampleState',
+            (r) => r.scopeName == '_ChildWidgetWithRootConstExampleState',
           );
           expect(
             withRootConst.treeConstWidgetCount,
@@ -568,7 +568,7 @@ void main() {
       );
 
       final simpleBuild = complexityResults.firstWhere(
-        (r) => r.stateClassName == '_SimpleBuildExampleState',
+        (r) => r.scopeName == '_SimpleBuildExampleState',
       );
       expect(
         simpleBuild.treeCyclomaticComplexity,
@@ -578,7 +578,7 @@ void main() {
       );
 
       final conditionalBuild = complexityResults.firstWhere(
-        (r) => r.stateClassName == '_ConditionalBuildExampleState',
+        (r) => r.scopeName == '_ConditionalBuildExampleState',
       );
       expect(
         conditionalBuild.treeCyclomaticComplexity,
@@ -588,7 +588,7 @@ void main() {
       );
 
       final complexBuild = complexityResults.firstWhere(
-        (r) => r.stateClassName == '_ComplexBuildExampleState',
+        (r) => r.scopeName == '_ComplexBuildExampleState',
       );
       expect(
         complexBuild.treeCyclomaticComplexity,
@@ -598,7 +598,7 @@ void main() {
       );
 
       final ternaryBuild = complexityResults.firstWhere(
-        (r) => r.stateClassName == '_TernaryBuildExampleState',
+        (r) => r.scopeName == '_TernaryBuildExampleState',
       );
       expect(
         ternaryBuild.treeCyclomaticComplexity,
@@ -608,7 +608,7 @@ void main() {
       );
 
       final forInBuild = complexityResults.firstWhere(
-        (r) => r.stateClassName == '_ForInBuildExampleState',
+        (r) => r.scopeName == '_ForInBuildExampleState',
       );
       expect(
         forInBuild.treeCyclomaticComplexity,
@@ -619,7 +619,7 @@ void main() {
       );
 
       final collectionElements = complexityResults.firstWhere(
-        (r) => r.stateClassName == '_CollectionElementBuildExampleState',
+        (r) => r.scopeName == '_CollectionElementBuildExampleState',
       );
       expect(
         collectionElements.treeCyclomaticComplexity,
@@ -630,7 +630,7 @@ void main() {
       );
 
       final switchPattern = complexityResults.firstWhere(
-        (r) => r.stateClassName == '_SwitchPatternBuildExampleState',
+        (r) => r.scopeName == '_SwitchPatternBuildExampleState',
       );
       expect(
         switchPattern.treeCyclomaticComplexity,
@@ -641,7 +641,7 @@ void main() {
       );
 
       final switchExpression = complexityResults.firstWhere(
-        (r) => r.stateClassName == '_SwitchExpressionBuildExampleState',
+        (r) => r.scopeName == '_SwitchExpressionBuildExampleState',
       );
       expect(
         switchExpression.treeCyclomaticComplexity,

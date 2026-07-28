@@ -1,6 +1,7 @@
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:spm/src/core/constants/app_constants.dart';
 import 'package:spm/src/features/analysis/data/data_sources/extensions/state_class_detector.dart';
 import 'package:spm/src/features/isolation/data/data_sources/sets/isolation_match_set.dart';
 
@@ -24,14 +25,14 @@ class RebuildScopeVisitor extends RecursiveAstVisitor<void> {
         originalPath: result.path,
         name: node.namePart.typeName.lexeme,
         scopeNode: node,
-        type: 'State',
+        type: AppConstants.stateScopeType,
       ));
-    } else if (_isConsumerWidget(node)) {
+    } else if (isConsumerWidgetSubclass(node)) {
       matches.add((
         originalPath: result.path,
         name: node.namePart.typeName.lexeme,
         scopeNode: node,
-        type: 'ConsumerWidget',
+        type: AppConstants.consumerWidgetScopeType,
       ));
     }
     super.visitClassDeclaration(node);
@@ -39,43 +40,12 @@ class RebuildScopeVisitor extends RecursiveAstVisitor<void> {
 
   @override
   void visitInstanceCreationExpression(InstanceCreationExpression node) {
-    final constructorType = node.constructorName.type;
-    String typeName = constructorType.name.lexeme;
-    // Handle prefixed types like 'bloc.BlocBuilder'
-    if (typeName.contains('.')) {
-      typeName = typeName.split('.').last;
-    }
+    // Handles prefixed types like 'bloc.BlocBuilder'
+    final typeName = unprefixedTypeName(node);
 
-    // List of supported builder widgets that trigger rebuilds
-    if ([
-      'Consumer',
-      'Selector',
-      'BlocBuilder',
-      'BlocSelector',
-      'BlocConsumer',
-      'Obx',
-      'GetX',
-      'GetBuilder',
-      'Observer',
-    ].contains(typeName)) {
-      Expression? builderArg;
-      // Most widgets use a named 'builder' parameter
-      for (final arg in node.argumentList.arguments) {
-        if (arg is NamedArgument && arg.name.lexeme == 'builder') {
-          builderArg = arg.argumentExpression;
-          break;
-        }
-      }
-      // Some widgets (like Obx) take the builder as the first positional argument
-      if (builderArg == null &&
-          (typeName == 'Obx' ||
-              typeName == 'Observer' ||
-              typeName == 'GetBuilder' ||
-              typeName == 'GetX') &&
-          node.argumentList.arguments.isNotEmpty) {
-        final arg = node.argumentList.arguments.first;
-        if (arg is Expression) builderArg = arg;
-      }
+    // Supported builder widgets that trigger rebuilds
+    if (AppConstants.builderScopeWidgets.contains(typeName)) {
+      final builderArg = findBuilderArgument(node, typeName);
 
       if (builderArg != null) {
         matches.add((
@@ -87,23 +57,6 @@ class RebuildScopeVisitor extends RecursiveAstVisitor<void> {
       }
     }
     super.visitInstanceCreationExpression(node);
-  }
-
-  /// Finds the `build` method within a class declaration.
-  static MethodDeclaration? findBuildMethod(ClassDeclaration node) {
-    for (final member in (node.body as BlockClassBody).members) {
-      if (member is MethodDeclaration && member.name.lexeme == 'build') {
-        return member;
-      }
-    }
-    return null;
-  }
-
-  /// Checks if a class inherits from a Riverpod/Hooks consumer.
-  bool _isConsumerWidget(ClassDeclaration node) {
-    if (node.extendsClause == null) return false;
-    final superName = node.extendsClause!.superclass.name.lexeme;
-    return superName == 'ConsumerWidget' || superName == 'HookConsumerWidget';
   }
 
   /// Extracts the relevant AST node representing the body of a function.

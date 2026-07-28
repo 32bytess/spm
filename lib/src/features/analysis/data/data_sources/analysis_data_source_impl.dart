@@ -13,17 +13,21 @@ import 'package:spm/src/features/analysis/domain/entities/analysis_event.dart';
 
 import 'analysis_data_source.dart';
 import 'extractors/tree_extractor.dart';
-import 'sets/state_class_instance_set.dart';
+import 'sets/rebuild_scope_instance_set.dart';
 import 'sets/tree_features_set.dart';
-import 'visitors/state_class_visitor.dart';
+import 'visitors/rebuild_scope_analysis_visitor.dart';
 
 class AnalysisDataSourceImpl implements AnalysisDataSource {
   @override
-  Stream<AnalysisEvent> analyzeDirs(List<String> repoDirs) async* {
+  Stream<AnalysisEvent> analyzeDirs(
+    List<String> repoDirs, {
+    Set<String>? scopeTypes,
+  }) async* {
     int filesScanned = 0;
     int filesSkipped = 0;
-    int stateClassesFound = 0;
+    int scopesFound = 0;
     int keptRows = 0;
+    final scopesByType = <String, int>{};
     final collection = AnalysisContextCollection(
       includedPaths: repoDirs,
       resourceProvider: PhysicalResourceProvider.INSTANCE,
@@ -54,17 +58,28 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
         }
 
         final unit = result.unit;
-        final visitor = StateClassVisitor(
+        final visitor = RebuildScopeAnalysisVisitor(
           result,
           rootPath: context.contextRoot.root.path,
         );
         unit.accept(visitor);
 
-        stateClassesFound += visitor.instances.length;
+        scopesFound += visitor.instances.length;
+        for (final scope in visitor.instances) {
+          scopesByType.update(
+            scope.scopeType,
+            (count) => count + 1,
+            ifAbsent: () => 1,
+          );
+        }
 
-        for (final StateClassInstance state in visitor.instances) {
+        for (final RebuildScopeInstance scope in visitor.instances) {
+          if (scopeTypes != null && !scopeTypes.contains(scope.scopeType)) {
+            continue;
+          }
+
           final TreeFeaturesSet treeFeatures = await treeExtractor.extract(
-            state,
+            scope,
             collection: collection,
           );
 
@@ -72,9 +87,9 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
           yield AnalysisDataEvent(
             result: AnalysisResultModel.fromTreeFeatures(
               treeFeatures: treeFeatures,
-              state: state,
+              scope: scope,
               filePath: p.relative(
-                state.filePath,
+                scope.filePath,
                 from: context.contextRoot.root.path,
               ),
             ),
@@ -85,7 +100,8 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
     yield AnalysisSummaryEvent(
       filesScanned: filesScanned,
       filesSkipped: filesSkipped,
-      stateClassesFound: stateClassesFound,
+      scopesFound: scopesFound,
+      scopesByType: scopesByType,
       keptRows: keptRows,
     );
   }

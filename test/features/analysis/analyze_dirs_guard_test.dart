@@ -93,15 +93,12 @@ void main() {
     });
 
     test('the valid file still yields its row', () {
-      expect(
-        rows.map((r) => r.stateClassName),
-        contains('_TempValidExampleState'),
-      );
+      expect(rows.map((r) => r.scopeName), contains('_TempValidExampleState'));
     });
 
     test('the broken file yields no garbage row', () {
       expect(
-        rows.map((r) => r.stateClassName),
+        rows.map((r) => r.scopeName),
         isNot(contains('_TempBrokenExampleState')),
         reason:
             'unresolved types would classify every widget as a value object '
@@ -126,7 +123,7 @@ void main() {
         expect(p.isRelative(r.filePath), isTrue);
         expect(
           r.instanceId,
-          equals(_rollingHash('${r.filePath}:${r.stateClassName}')),
+          equals(_rollingHash('${r.filePath}:${r.scopeName}')),
           reason:
               'instanceId must be derived from the same root-relative path '
               'emitted as filePath, not the absolute path',

@@ -12,8 +12,8 @@ import 'utils/test_helper.dart';
 void main() {
   late List<AnalysisResultEntity> results;
 
-  AnalysisResultEntity byName(String stateClassName) =>
-      results.firstWhere((r) => r.stateClassName == stateClassName);
+  AnalysisResultEntity byName(String scopeName) =>
+      results.firstWhere((r) => r.scopeName == scopeName);
 
   setUpAll(() async {
     results = await getResultsForFixture('build_tree/helper_refs.dart');

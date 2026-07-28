@@ -9,7 +9,7 @@ void main() {
   setUpAll(() async {
     final results = await getResultsForFixture('part_library');
     result = results.singleWhere(
-      (row) => row.stateClassName == '_PartLibraryExampleState',
+      (row) => row.scopeName == '_PartLibraryExampleState',
     );
   });
 

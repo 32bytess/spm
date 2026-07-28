@@ -12,7 +12,7 @@ void main() {
 
   test('detects direct State<> subclass', () {
     expect(
-      results.any((r) => r.stateClassName == '_DirectState'),
+      results.any((r) => r.scopeName == '_DirectState'),
       isTrue,
       reason: 'Direct extends State<X> must be detected.',
     );
@@ -20,7 +20,7 @@ void main() {
 
   test('detects indirect State<> subclass via abstract base', () {
     expect(
-      results.any((r) => r.stateClassName == '_IndirectState'),
+      results.any((r) => r.scopeName == '_IndirectState'),
       isTrue,
       reason:
           '_IndirectState extends BaseState which extends State<X> — '
@@ -30,7 +30,7 @@ void main() {
 
   test('plain class is not detected', () {
     expect(
-      results.any((r) => r.stateClassName == 'PlainClass'),
+      results.any((r) => r.scopeName == 'PlainClass'),
       isFalse,
       reason: 'PlainClass has no State<> ancestor and must not be emitted.',
     );

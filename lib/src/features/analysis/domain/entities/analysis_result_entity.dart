@@ -1,7 +1,12 @@
 class AnalysisResultEntity {
   final String instanceId;
   final String filePath;
-  final String stateClassName;
+
+  /// Class name of the scope, or `'<Widget>_builder'` for a builder callback.
+  final String scopeName;
+
+  /// Kind of rebuild scope: `State`, `ConsumerWidget`, `BlocBuilder`, ...
+  final String scopeType;
 
   final int treeNonConstWidgetCount;
   final int treeMaxWidgetNestingDepth;
@@ -30,7 +35,8 @@ class AnalysisResultEntity {
   AnalysisResultEntity({
     required this.instanceId,
     required this.filePath,
-    required this.stateClassName,
+    required this.scopeName,
+    required this.scopeType,
     required this.treeNonConstWidgetCount,
     required this.treeMaxWidgetNestingDepth,
     required this.treeListRenderingStrategy,

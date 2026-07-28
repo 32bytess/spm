@@ -16,9 +16,7 @@ void main() {
     final results = await getResultsForFixture(
       'build_tree/stateful_child.dart',
     );
-    host = results.firstWhere(
-      (r) => r.stateClassName == '_StatefulChildHostState',
-    );
+    host = results.firstWhere((r) => r.scopeName == '_StatefulChildHostState');
   });
 
   test('treeNonConstWidgetCount includes the child State build()', () {

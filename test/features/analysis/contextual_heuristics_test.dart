@@ -20,14 +20,14 @@ void main() {
 
     test('ListView.builder is lazy (1)', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_ListViewBuilderExampleState',
+        (r) => r.scopeName == '_ListViewBuilderExampleState',
       );
       expect(r.treeListRenderingStrategy, equals(1));
     });
 
     test('plain ListView with mapped children is eager (2)', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_ListViewNoBuilderExampleState',
+        (r) => r.scopeName == '_ListViewNoBuilderExampleState',
       );
       expect(
         r.treeListRenderingStrategy,
@@ -40,7 +40,7 @@ void main() {
 
     test('GridView.builder is lazy (1)', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_GridViewBuilderExampleState',
+        (r) => r.scopeName == '_GridViewBuilderExampleState',
       );
       expect(r.treeListRenderingStrategy, equals(1));
     });
@@ -62,14 +62,14 @@ void main() {
 
     test('LayoutBuilder sets the flag', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_WithLayoutBuilderExampleState',
+        (r) => r.scopeName == '_WithLayoutBuilderExampleState',
       );
       expect(r.usesLayoutDependentBuilder, isTrue);
     });
 
     test('layout-independent build does not set the flag', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_WithoutLayoutBuilderExampleState',
+        (r) => r.scopeName == '_WithoutLayoutBuilderExampleState',
       );
       expect(r.usesLayoutDependentBuilder, isFalse);
     });

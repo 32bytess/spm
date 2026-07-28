@@ -20,7 +20,7 @@ void main() {
       'arrow body returning const widget sets rootBuildReturnsConstWidget',
       () {
         final r = results.firstWhere(
-          (r) => r.stateClassName == '_ArrowConstReturnExampleState',
+          (r) => r.scopeName == '_ArrowConstReturnExampleState',
         );
         expect(
           r.rootBuildReturnsConstWidget,
@@ -40,7 +40,7 @@ void main() {
 
     test('arrow body delegating to a helper counts the helper', () {
       final r = results.firstWhere(
-        (r) => r.stateClassName == '_ArrowHelperRootExampleState',
+        (r) => r.scopeName == '_ArrowHelperRootExampleState',
       );
       expect(
         r.helperReferenceCount,
@@ -65,7 +65,7 @@ void main() {
       'builder closures returning const do not set rootBuildReturnsConstWidget',
       () {
         final r = results.firstWhere(
-          (r) => r.stateClassName == '_ClosureConstReturnExampleState',
+          (r) => r.scopeName == '_ClosureConstReturnExampleState',
         );
         expect(
           r.rootBuildReturnsConstWidget,
