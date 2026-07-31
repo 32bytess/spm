@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.1.2
+
+### Added
+
+- `example/spm_example.dart`, named to match pub.dev's package-example convention, so the package
+  page renders an Example tab.
+
+### Changed
+
+- Filled in missing dartdoc coverage on `SpmProfiler` and its exported libraries.
+- Tightened prose across README and CONTRIBUTING.
+
 ## 0.1.1
 
 ### Changed

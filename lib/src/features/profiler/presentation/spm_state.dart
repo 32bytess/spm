@@ -1,3 +1,6 @@
+/// Base [State] class used by SPM-instrumented Flutter widgets.
+library;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
