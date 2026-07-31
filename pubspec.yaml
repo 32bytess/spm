@@ -1,9 +1,9 @@
 name: spm
 description: Unified static analysis and runtime profiling for Flutter rebuild scopes and their triggers.
-version: 0.1.1
-repository: https://github.com/albertoodev/spm
-issue_tracker: https://github.com/albertoodev/spm/issues
-documentation: https://github.com/albertoodev/spm/wiki
+version: 0.1.2
+repository: https://github.com/32bytess/spm
+issue_tracker: https://github.com/32bytess/spm/issues
+documentation: https://github.com/32bytess/spm/wiki
 
 platforms:
   android:
