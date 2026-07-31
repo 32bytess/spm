@@ -17,6 +17,5 @@ coverage/
 # Local agent/scratch (not part of the tool)
 .claude/
 memory/
-wiki/
 
 # pubspec.lock IS tracked here on purpose (reproducible research tool)

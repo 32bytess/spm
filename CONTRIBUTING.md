@@ -1,23 +1,22 @@
 # Contributing to SPM
 
-Thanks for considering a contribution. SPM is still pre-1.0, so changes are welcome, but please keep pull requests focused and easy to review.
+SPM is still pre-1.0, so focused fixes and small feature additions are welcome. The wiki's
+[Contributing](https://github.com/32bytess/spm/wiki/Contributing) page explains where each type of
+change belongs; this file covers the repository gate.
 
-## Setup
+## Set up the repository
 
 ```bash
-git clone https://github.com/albertoodev/spm.git
+git clone https://github.com/32bytess/spm.git
 cd spm
 dart pub get
 ```
 
-Requirements:
+You need Dart 3.9.2 or newer and Flutter 3.3 or newer.
 
-- Dart SDK 3.9 or newer
-- Flutter 3.3 or newer
+## Check a change
 
-## Local Checks
-
-Run these before opening a pull request:
+Run the full local gate before opening a pull request:
 
 ```bash
 dart format .
@@ -26,28 +25,23 @@ dart test
 dart pub publish --dry-run
 ```
 
-The package should publish cleanly from a committed worktree. If the dry run only warns about uncommitted files, commit your changes and run it again.
+The package must publish from a committed worktree. If the dry run reports only uncommitted files,
+commit the intended changes and run it again.
 
-## Code Guidelines
+## Keep the change contained
 
-- Keep implementation libraries under `lib/src/`.
-- Keep the supported public API limited to `package:spm/spm.dart` unless a new public API is intentional.
-- Add or update tests for behavior changes.
-- Update the wiki when changing CLI flags, JSON fields, event names, validation codes, or architecture.
-- Prefer small pull requests scoped to one feature area.
+- Put implementation libraries under `lib/src/`.
+- Keep the supported public API in `package:spm/spm.dart` unless the change deliberately adds a new
+  public surface.
+- Add or update tests for changed behavior. Use hand-written fakes rather than mocks.
+- Update the wiki when changing CLI flags, JSON fields, event names, validation codes, or
+  architecture.
+- Prefer one feature area per pull request.
 
-For the full project conventions, see the wiki:
+The `wiki/` directory is a separate Git repository. Commit its changes there as well as any changes
+in the main repository.
 
-- Architecture: https://github.com/albertoodev/spm/wiki/Architecture
-- Development: https://github.com/albertoodev/spm/wiki/Development
-- Contributing: https://github.com/albertoodev/spm/wiki/Contributing
+## Describe the pull request
 
-## Pull Requests
-
-Please include:
-
-- what changed;
-- why it changed;
-- tests or commands you ran;
-- any docs that were updated.
-
+Explain what changed, why it changed, which checks you ran, and which documentation you updated. If
+documentation was unnecessary, say why.
