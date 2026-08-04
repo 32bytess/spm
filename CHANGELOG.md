@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0
+
+### Changed
+
+- Documented SPM's research-dataset origin and planned 1.0.0 static screening direction: classify
+  UI changes as stable or faster (`0`) or slower (`1`) from build-tree metrics without running or
+  profiling the app.
+
+### Removed
+
+- **Breaking:** Removed the legacy `package:spm/features/profiler/presentation/` compatibility
+  exports. Import `SpmState` and `SpmProfiler` from `package:spm/spm.dart`.
+
 ## 0.1.2
 
 ### Added
