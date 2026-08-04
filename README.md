@@ -15,6 +15,14 @@ The [project wiki](https://github.com/32bytess/spm/wiki) contains the command re
 schemas, metric definitions, and architecture notes. The package is published on
 [pub.dev](https://pub.dev/packages/spm).
 
+## Project status
+
+SPM began as tooling for collecting a research dataset pairing static build-tree metrics with
+profile-mode `buildSpan` measurements. The planned direction for 1.0.0 is a static screening tool
+that uses the build-tree metrics alone—without running or profiling the app—to classify a UI change
+by its expected effect on UI-thread frame build duration: stable or faster (`0`), or slower (`1`).
+This classifier is planned and is not available in the current release.
+
 ## Install
 
 Install the executable globally:
