@@ -33,6 +33,14 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   int listRenderingStrategy = 0;
   bool returnsConst = false;
 
+  /// Top-level returns of this body, and how many of them return a const
+  /// widget. [returnsConst] is true only when *every* exit is const: a build
+  /// with an early `return const SizedBox.shrink()` guard still pays full
+  /// cost on the path that matters, so "any const return" would label a
+  /// normal build as free.
+  int rootReturnCount = 0;
+  int constRootReturnCount = 0;
+
   int treeConstWidgetCount = 0;
   int helperReferenceCount = 0;
   List<HelperRef> helperRefs = [];
@@ -50,7 +58,31 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   int _functionDepth = 0;
   bool _inReturnExpression = false;
 
+  /// Local functions declared in this body, held back from their declaration
+  /// site. See [visitFunctionDeclarationStatement].
+  final Map<String, FunctionExpression> _deferredLocalFns = {};
+
   BuildMetricsVisitor();
+
+  /// Visits any local function that was declared but never referenced. Call
+  /// once after the body has been accepted, so a helper declared for
+  /// readability and never used still contributes its widgets exactly as it
+  /// did when bodies were visited at their declaration site.
+  void finish() {
+    while (_deferredLocalFns.isNotEmpty) {
+      final name = _deferredLocalFns.keys.first;
+      _visitDeferredLocalFn(name);
+    }
+  }
+
+  /// Visits the body of local function [name] in the *current* context, if it
+  /// has not been visited yet. Idempotent per function: a local function is
+  /// counted once, like a resolved helper method, so calling it twice does
+  /// not double its widgets.
+  void _visitDeferredLocalFn(String name) {
+    final fn = _deferredLocalFns.remove(name);
+    if (fn != null) fn.accept(this);
+  }
 
   @override
   void visitInstanceCreationExpression(InstanceCreationExpression node) {
@@ -60,6 +92,15 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
     // widget nested inside a value-object argument is discovered.
     if (!_isWidgetType(node.staticType)) {
       if (!node.isConst) valueObjectAllocCount++;
+      // `List.generate(n, f)` / `Iterable.generate(n, f)` invoke `f` once per
+      // element. They are factory constructors, not method invocations, so the
+      // `generate` case in [visitMethodInvocation] never sees them — without
+      // this, an O(N) widget factory reads as a single allocation.
+      if (_isGenerateCtor(node)) {
+        treeIterationCount++;
+        _inIteration(() => node.argumentList.visitChildren(this));
+        return;
+      }
       node.argumentList.visitChildren(this);
       return;
     }
@@ -97,8 +138,9 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
     // The arguments of a lazy list constructor (itemBuilder/separatorBuilder)
     // execute once per visible element: widgets inside are per-element cost.
     final lazyBuilder =
-        (typeName == 'ListView' || typeName == 'GridView') &&
-        _lazyListCtors.contains(node.constructorName.name?.name);
+        _alwaysLazyLists.contains(typeName) ||
+        (_scrollListWidgets.contains(typeName) &&
+            _lazyListCtors.contains(node.constructorName.name?.name));
     if (lazyBuilder) _lazyBuilderDepth++;
     node.argumentList.visitChildren(this);
     if (lazyBuilder) _lazyBuilderDepth--;
@@ -106,9 +148,23 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
     _currentDepth--;
   }
 
+  /// Holds a local function's body back from its declaration site so it can
+  /// be visited where it is actually called.
+  ///
+  /// `Widget row(i) => ...;` declared before a loop but invoked inside it
+  /// costs one widget *per element*. Visiting the body at the declaration
+  /// site records those widgets outside any iteration scope, losing the
+  /// per-element multiplier that [iterationWidgetCount] exists to capture.
+  @override
+  void visitFunctionDeclarationStatement(FunctionDeclarationStatement node) {
+    final decl = node.functionDeclaration;
+    _deferredLocalFns[decl.name.lexeme] = decl.functionExpression;
+  }
+
   @override
   void visitMethodInvocation(MethodInvocation node) {
     final name = node.methodName.name;
+    _visitDeferredLocalFn(name);
     if (AppConstants.linearCollectionOps.contains(name)) {
       // A linear collection op is never a helper method, even when it yields
       // a Widget (e.g. firstWhere on a List<Widget>).
@@ -123,7 +179,7 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
     // not re-enter this class's own build body via helper resolution.
     if ((_currentDepth > 0 || _inReturnExpression) &&
         name != 'build' &&
-        _isWidgetType(node.staticType)) {
+        _producesWidgets(node.staticType, node.methodName.element)) {
       helperReferenceCount++;
       helperRefs.add((name: name, element: node.methodName.element));
     }
@@ -132,6 +188,8 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
 
   @override
   void visitSimpleIdentifier(SimpleIdentifier node) {
+    // A tear-off of a local function (`items.map(row)`) is a call site too.
+    _visitDeferredLocalFn(node.name);
     _maybeCountHelperReference(node);
     super.visitSimpleIdentifier(node);
   }
@@ -165,7 +223,7 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
     final DartType returnType = element.returnType;
     // Tear-off: the reference's own static type is a function type; what
     // matters is what the executable returns when invoked per element/frame.
-    if (!_isWidgetType(returnType)) return;
+    if (!_producesWidgets(returnType, element)) return;
 
     helperReferenceCount++;
     helperRefs.add((name: name, element: element));
@@ -222,15 +280,19 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
       super.visitReturnStatement(node);
       return;
     }
-    final expr = node.expression;
-    if (_currentDepth == 0 &&
-        expr is InstanceCreationExpression &&
-        expr.isConst) {
-      returnsConst = true;
-    }
+    _recordRootReturn(node.expression);
     _inReturnExpression = true;
     super.visitReturnStatement(node);
     _inReturnExpression = false;
+  }
+
+  void _recordRootReturn(Expression? expr) {
+    if (_currentDepth != 0) return;
+    rootReturnCount++;
+    if (expr is InstanceCreationExpression && expr.isConst) {
+      constRootReturnCount++;
+      returnsConst = true;
+    }
   }
 
   @override
@@ -242,39 +304,76 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
       super.visitExpressionFunctionBody(node);
       return;
     }
-    final expr = node.expression;
-    if (_currentDepth == 0 &&
-        expr is InstanceCreationExpression &&
-        expr.isConst) {
-      returnsConst = true;
-    }
+    _recordRootReturn(node.expression);
     _inReturnExpression = true;
     super.visitExpressionFunctionBody(node);
     _inReturnExpression = false;
   }
 
   static const _flexLike = {'Column', 'Row', 'Wrap', 'Flex'};
-  static const _lazyListCtors = {'builder', 'separated', 'custom'};
+  static const _lazyListCtors = {
+    'builder',
+    'separated',
+    'custom',
+    'useDelegate',
+  };
+
+  /// Scrollable list widgets whose laziness depends on which constructor is
+  /// used: a named lazy constructor culls to the viewport, a `children:` list
+  /// is built in full on every rebuild.
+  static const _scrollListWidgets = {
+    'ListView',
+    'GridView',
+    'ReorderableListView',
+    'PageView',
+    'ListWheelScrollView',
+  };
+
+  /// List widgets that are viewport-bounded by contract in every form: they
+  /// only ever take a builder or a lazy delegate.
+  static const _alwaysLazyLists = {
+    'SliverList',
+    'SliverGrid',
+    'SliverFixedExtentList',
+    'SliverPrototypeExtentList',
+    'SliverAnimatedList',
+    'AnimatedList',
+    'AnimatedGrid',
+  };
+
+  /// Sliver delegate that materializes a concrete child list: the sliver is
+  /// lazy in name only, every child is built on every rebuild.
+  static const _eagerSliverDelegate = 'SliverChildListDelegate';
 
   /// Classifies the list-rendering strategy of a single widget instantiation.
   ///
-  /// 1 (lazy): `ListView`/`GridView` `.builder`/`.separated`/`.custom`, or a
-  /// `SliverList`/`SliverGrid` in any form (viewport-bounded by contract).
+  /// 1 (lazy): a scroll list built through `.builder`/`.separated`/`.custom`/
+  /// `.useDelegate`, or a sliver list that is viewport-bounded by contract.
   ///
-  /// 2 (eager): `ListView`/`GridView` fed a concrete `children:` (all children
-  /// built every rebuild, no viewport culling), or a `Column`/`Row`/`Wrap`/
-  /// `Flex` whose `children:` is runtime-length — a spread / `for`-element
-  /// inside the literal, or any non-literal expression (`items`,
-  /// `items.map(...).toList()`, `List.generate(...)`, a helper call, ...).
-  /// A fixed-arity literal (`[A, B, if (c) C]`) stays 0: its cost is constant
-  /// and already captured by the widget instance count.
+  /// 2 (eager): a scroll list fed a concrete `children:` (all children built
+  /// every rebuild, no viewport culling), a sliver list fed a
+  /// `SliverChildListDelegate` (same thing, one indirection down), or a
+  /// `Column`/`Row`/`Wrap`/`Flex` whose `children:` is runtime-length — a
+  /// spread / `for`-element inside the literal, or any non-literal expression
+  /// (`items`, `items.map(...).toList()`, `List.generate(...)`, a helper
+  /// call, ...). A fixed-arity literal (`[A, B, if (c) C]`) stays 0: its cost
+  /// is constant and already captured by the widget instance count.
   static int _classifyListStrategy(
     InstanceCreationExpression node,
     String typeName,
   ) {
-    if (typeName == 'SliverList' || typeName == 'SliverGrid') return 1;
+    if (_alwaysLazyLists.contains(typeName)) {
+      // `SliverList(delegate: SliverChildListDelegate([...]))` builds every
+      // child up front; only a builder delegate is genuinely lazy.
+      final delegate = _namedArgument(node, 'delegate');
+      if (delegate is InstanceCreationExpression &&
+          delegate.constructorName.type.name.lexeme == _eagerSliverDelegate) {
+        return 2;
+      }
+      return 1;
+    }
 
-    final isScrollList = typeName == 'ListView' || typeName == 'GridView';
+    final isScrollList = _scrollListWidgets.contains(typeName);
     if (isScrollList &&
         _lazyListCtors.contains(node.constructorName.name?.name)) {
       return 1;
@@ -288,6 +387,14 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
       return 2;
     }
     return 0;
+  }
+
+  /// Whether [node] is `List.generate(...)` / `Iterable.generate(...)`: a
+  /// factory constructor that runs its callback once per element.
+  static bool _isGenerateCtor(InstanceCreationExpression node) {
+    if (node.constructorName.name?.name != 'generate') return false;
+    final typeName = node.constructorName.type.name.lexeme;
+    return typeName == 'List' || typeName == 'Iterable';
   }
 
   static Expression? _namedArgument(
@@ -331,6 +438,55 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
     if (type is! InterfaceType) return false;
     return type.element.name == 'Widget' ||
         type.allSupertypes.any((t) => t.element.name == 'Widget');
+  }
+
+  /// Whether an executable returning [type] is a widget-producing helper.
+  ///
+  /// A helper returning `List<Widget>` is a widget factory just as much as one
+  /// returning a single `Widget`: the caller splices its result straight into
+  /// the tree (`children:`, `items:`, `slivers:`), so every widget it builds
+  /// is per-rebuild cost and its body must be analyzed. Gating on the return
+  /// type alone would miss the whole `List<Widget> _buildX()` idiom, since
+  /// `List` is not a `Widget` subtype.
+  ///
+  /// [element] is the invoked or torn-off executable. It rejects SDK
+  /// collection plumbing (`toList`, `cast`, `followedBy`, ...), which yields a
+  /// widget collection without building anything — `items.map(_buildRow)
+  /// .toList()` must count `_buildRow` once, not `toList` as well.
+  static bool _producesWidgets(DartType? type, Element? element) {
+    if (_isWidgetType(type)) return true;
+    if (!_isWidgetIterableType(type)) return false;
+    return !_isSdkExecutable(element);
+  }
+
+  /// Whether [type] is an `Iterable` (`List`, `Set`, `Iterable`, ...) whose
+  /// element type is a widget. `Map<String, Widget>` is not: it does not
+  /// implement `Iterable` and is not a shape `children:` accepts.
+  static bool _isWidgetIterableType(DartType? type) {
+    if (type is! InterfaceType) return false;
+    InterfaceType? iterable;
+    if (type.element.name == 'Iterable') {
+      iterable = type;
+    } else {
+      for (final supertype in type.allSupertypes) {
+        if (supertype.element.name == 'Iterable') {
+          iterable = supertype;
+          break;
+        }
+      }
+    }
+    if (iterable == null || iterable.typeArguments.length != 1) return false;
+    return _isWidgetType(iterable.typeArguments.single);
+  }
+
+  /// Whether [element] is declared by the SDK or Flutter itself. An
+  /// unresolved element (null library, standalone fixtures) is treated as
+  /// user code so name-based fallback resolution still applies.
+  static bool _isSdkExecutable(Element? element) {
+    final libraryId = element?.library?.identifier;
+    if (libraryId == null) return false;
+    return libraryId.startsWith('dart:') ||
+        libraryId.startsWith('package:flutter/');
   }
 
   static bool _isFromSdk(ClassElement element) {

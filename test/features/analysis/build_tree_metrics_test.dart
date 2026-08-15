@@ -352,8 +352,18 @@ void main() {
       );
       expect(
         multipleHelpers.helperWidgetCount,
-        equals(3),
-        reason: 'Three helpers each returning 1 widget → 3 total',
+        equals(1),
+        reason:
+            'Three helpers each return 1 widget, but only _buildBody() '
+            'returns a NON-const Text; the other two are const units',
+      );
+      expect(
+        multipleHelpers.treeConstWidgetCount,
+        equals(2),
+        reason:
+            'buildHeader() and buildFooter() each return a const Text — a '
+            'const widget in a helper body is a const unit, so a const swap '
+            'inside a helper is visible',
       );
 
       final nonBuildNamed = helperResults.firstWhere(
@@ -489,16 +499,17 @@ void main() {
         );
       });
 
-      test('helperWidgetCount includes child widget helper bodies', () {
+      test('helperWidgetCount counts only non-const helper widgets', () {
         final noRootConst = childResults.firstWhere(
           (r) => r.scopeName == '_ChildWidgetNoRootConstExampleState',
         );
         expect(
           noRootConst.helperWidgetCount,
-          equals(2),
+          equals(0),
           reason:
-              'root helper _buildRootHelper -> const Placeholder (1) + child '
-              'helper _buildHelper -> const Icon (1) = 2 (const counted in helpers)',
+              'root helper _buildRootHelper -> const Placeholder and child '
+              'helper _buildHelper -> const Icon are both const units, so '
+              'neither is a non-const helper widget',
         );
         expect(
           noRootConst.helperMaxWidgetNestingDepth,
@@ -511,8 +522,8 @@ void main() {
         );
         expect(
           withRootConst.helperWidgetCount,
-          equals(2),
-          reason: 'Same root + child helper widgets -> 2',
+          equals(0),
+          reason: 'Same two const helper widgets -> 0',
         );
       });
 
@@ -530,17 +541,17 @@ void main() {
       });
 
       test(
-        'treeConstWidgetCount covers full tree but excludes helper method widgets',
+        'treeConstWidgetCount covers the full tree, helper bodies included',
         () {
           final noRootConst = childResults.firstWhere(
             (r) => r.scopeName == '_ChildWidgetNoRootConstExampleState',
           );
           expect(
             noRootConst.treeConstWidgetCount,
-            equals(2),
+            equals(4),
             reason:
                 'root build: 0 const; child build: Text(a) + Text(b) = 2; '
-                'root helper Placeholder and child helper Icon are NOT counted',
+                'root helper Placeholder = 1; child helper Icon = 1; total = 4',
           );
 
           final withRootConst = childResults.firstWhere(
@@ -548,10 +559,11 @@ void main() {
           );
           expect(
             withRootConst.treeConstWidgetCount,
-            equals(3),
+            equals(5),
             reason:
-                'root build: const Text = 1; child build: Text(a) + Text(b) = 2; total = 3; '
-                'root helper Placeholder and child helper Icon are NOT counted',
+                'root build: const Text = 1; child build: Text(a) + Text(b) '
+                '= 2; root helper Placeholder = 1; child helper Icon = 1; '
+                'total = 5',
           );
         },
       );

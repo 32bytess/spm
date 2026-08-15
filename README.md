@@ -17,11 +17,21 @@ schemas, metric definitions, and architecture notes. The package is published on
 
 ## Project status
 
-SPM began as tooling for collecting a research dataset pairing static build-tree metrics with
-profile-mode `buildSpan` measurements. The planned direction for 1.0.0 is a static screening tool
-that uses the build-tree metrics alone—without running or profiling the app—to classify a UI change
-by its expected effect on UI-thread frame build duration: stable or faster (`0`), or slower (`1`).
-This classifier is planned and is not available in the current release.
+SPM began as tooling for a research dataset that pairs static build-tree metrics with profile-mode
+`buildSpan` measurements. For 1.0.0, the goal is to use those static metrics to screen a UI change
+without running or profiling the app. The binary result will indicate whether UI-thread frame build
+duration is stable or faster (`0`) or slower (`1`). This classifier is not available in the current
+release.
+
+## Metric compatibility
+
+The build-tree metrics changed in 0.3.0. Six extraction defects were fixed, among them helpers
+that return `List<Widget>`, const widgets written inside helper bodies, and list widgets other than
+`ListView` and `GridView`. Numbers from 0.2.0 and from 0.3.0 are not comparable, so re-run
+`analyze` over the whole project instead of mixing JSONL from both. [CHANGELOG.md](CHANGELOG.md)
+lists what each fix changed, and the wiki's
+[Extracted Features](https://github.com/32bytess/spm/wiki/Extracted-Features) page carries the
+current definition of every field.
 
 ## Install
 

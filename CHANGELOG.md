@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.3.0
+
+### Fixed
+
+Six build-tree metric defects, found by checking extracted values against what the analyzed source
+actually does. Every one of them changes numbers that 0.2.0 emitted, so metrics from the two
+versions cannot be compared or mixed in one dataset.
+
+- Helpers returning a collection of widgets were skipped. `List<Widget> _buildRows()` and
+  `List<DropdownMenuItem<T>> _buildItems()` are widget factories, but the return type had to be a
+  `Widget` subtype for the reference to count, and `List` is not one, so the reference went
+  uncounted and the body was never read. SDK collection methods such as `toList` and `cast` stay
+  excluded: their type says `List<Widget>` but they build nothing.
+- A `const` swap inside a helper body moved no metric. Helper const widgets were added to
+  `helperWidgetCount` alongside non-const ones, which erased the distinction. Const widgets in a
+  helper now count toward `treeConstWidgetCount`, and `helperWidgetCount` covers non-const helper
+  widgets only, matching how build bodies were already split.
+- List widgets other than `ListView` and `GridView` were left unclassified. `ReorderableListView`,
+  `PageView`, and `ListWheelScrollView` are now classified by constructor, and `AnimatedList`,
+  `AnimatedGrid`, and the remaining sliver lists are treated as lazy by contract. Their lazy
+  builders also mark the widgets they build as per-element cost.
+- Sliver laziness ignored the delegate. `SliverList(delegate: SliverChildListDelegate([...]))`
+  builds every child up front and is now eager (2). A builder delegate stays lazy (1).
+- `List.generate` read as a single allocation. It is a factory constructor, so the `generate` case
+  in the method-invocation path never saw it. It now counts as iteration, and the widgets its
+  callback builds count as per-element cost.
+- Local functions lost their per-element attribution. A local function declared above a loop and
+  invoked inside it was read at its declaration site, outside any iteration scope, so a row built
+  per element looked like a one-off. Bodies are now read at the first call site. A local function
+  that is never referenced is still read once, at the end of the traversal.
+
+### Changed
+
+- `rootBuildReturnsConstWidget` now requires every top-level return to be const. A single const
+  return used to set it, so a build that returns a full tree on its common path and
+  `const SizedBox.shrink()` from a loading guard was recorded as a const build.
+
 ## 0.2.0
 
 ### Changed
