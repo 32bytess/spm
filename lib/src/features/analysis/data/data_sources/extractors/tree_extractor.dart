@@ -56,6 +56,7 @@ class TreeExtractor {
       acc.buildCc += body.cyclomaticComplexity();
       final rootVisitor = BuildMetricsVisitor();
       body.accept(rootVisitor);
+      rootVisitor.finish();
       acc.mergeVisitor(rootVisitor, isRoot: true);
 
       final declaringClass = scope.declaringClass;
@@ -146,9 +147,15 @@ class TreeExtractor {
 
       final v = BuildMetricsVisitor();
       resolved.body.accept(v);
+      v.finish();
 
-      // Helper widget count includes const widgets (the const-in-helper case).
-      acc.helperWidgetCount += v.widgetCount + v.treeConstWidgetCount;
+      // Const widgets in a helper body are const units like any other: they
+      // belong to treeConstWidgetCount, not to helperWidgetCount. Folding
+      // both into one total made const-ness invisible inside helpers —
+      // swapping a helper's `Icon(...)` for `const Icon(...)` moved no
+      // feature at all.
+      acc.helperWidgetCount += v.widgetCount;
+      acc.treeConstWidgetCount += v.treeConstWidgetCount;
       if (v.maxDepth > acc.helperMaxDepth) acc.helperMaxDepth = v.maxDepth;
       acc.treeIterationCount += v.treeIterationCount;
       acc.iterationWidgetCount += v.iterationWidgetCount;
@@ -282,6 +289,7 @@ class TreeExtractor {
       final buildScopeId = '$libraryUri#$buildClassName';
       final visitor = BuildMetricsVisitor();
       buildMethod.body.accept(visitor);
+      visitor.finish();
       acc.buildCc += buildMethod.body.cyclomaticComplexity();
 
       acc.mergeVisitor(visitor, isRoot: false);
@@ -486,7 +494,12 @@ class _MetricsAccumulator {
 
     if (isRoot) {
       maxDepth = visitor.maxDepth;
-      returnsConst = visitor.returnsConst;
+      // Const only if EVERY exit is const. A build whose common path returns
+      // a full tree and whose guard returns `const SizedBox.shrink()` is not
+      // a const build, and must not be recorded as one.
+      returnsConst =
+          visitor.rootReturnCount > 0 &&
+          visitor.constRootReturnCount == visitor.rootReturnCount;
     }
   }
 
