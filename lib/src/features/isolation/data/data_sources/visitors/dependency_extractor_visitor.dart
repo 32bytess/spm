@@ -248,6 +248,10 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
   /// Extracts the source code for a dependency located in the same file.
   void _extractSameFile(String name) {
     if (name == 'build') return;
+    // `State` already supplies `context`. Some classes declare a field of the
+    // same name (nMobile's `BottomDialog` does); copying it across shadows the
+    // real one and the isolated file stops compiling.
+    if (name == 'context') return;
 
     if (enclosingClass != null) {
       for (final member in (enclosingClass!.body as BlockClassBody).members) {

@@ -24,7 +24,8 @@ class _ReorderableLazyExampleState extends State<ReorderableLazyExample> {
     return ReorderableListView.builder(
       itemCount: items.length,
       onReorder: (a, b) {},
-      itemBuilder: (context, index) => Text('${items[index]}', key: ValueKey(index)),
+      itemBuilder: (context, index) =>
+          Text('${items[index]}', key: ValueKey(index)),
     );
   }
 }
@@ -77,7 +78,10 @@ class _EagerSliverExampleState extends State<EagerSliverExample> {
     return CustomScrollView(
       slivers: [
         SliverList(
-          delegate: SliverChildListDelegate([Text('$counter'), const Text('b')]),
+          delegate: SliverChildListDelegate([
+            Text('$counter'),
+            const Text('b'),
+          ]),
         ),
       ],
     );

@@ -5,7 +5,9 @@ import 'package:spm/src/core/errors/exceptions.dart';
 import 'package:spm/src/features/analysis/data/data_sources/extensions/state_class_detector.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonizer.dart';
 import 'package:spm/src/features/isolation/data/data_sources/sets/isolation_match_set.dart';
+import 'package:spm/src/features/isolation/data/data_sources/visitors/captured_variable_visitor.dart';
 import 'package:spm/src/features/isolation/data/data_sources/visitors/dependency_extractor_visitor.dart';
+import 'package:spm/src/features/isolation/data/data_sources/visitors/promotion_cast_rewriter.dart';
 import 'package:spm/src/features/isolation/data/data_sources/visitors/rebuild_scope_visitor.dart';
 
 /// Extracts and transforms a discovered rebuild scope into a standalone [StatefulWidget].
@@ -45,6 +47,28 @@ class TransplantExtractor {
     final scopeNode = match.scopeNode;
     String buildBody;
     String paramFields = '';
+
+    // Names lifted onto the generated State, in emission order. Drives the
+    // field list, the generated initState and the promotion casts — so it has
+    // to be complete before any source is rendered.
+    final liftedFields = <CapturedVariable>[
+      ..._liftedParameters(scopeNode, match),
+    ];
+    final capture = CapturedVariableVisitor(
+      result,
+      scopeNode.offset,
+      scopeNode.end,
+      ignore: liftedFields.map((f) => f.name).toSet(),
+    );
+    scopeNode.accept(capture);
+    liftedFields.addAll(capture.captured);
+    final liftedGlobals = capture.capturedGlobals;
+
+    // Lifting a promoted parameter onto a field costs it its promotion, so the
+    // casts the original code did not need have to be written back in.
+    final rewriter = PromotionCastRewriter({
+      for (final f in liftedFields) f.name: f.type,
+    });
 
     // Identify the enclosing class if the scope is part of one (e.g., a State class)
     final enclosingClass = scopeNode is ClassDeclaration
@@ -142,10 +166,8 @@ class TransplantExtractor {
         if (buildMethod.parameters != null) {
           for (final param in buildMethod.parameters!.parameters) {
             final name = _getParamName(param);
-            final type = _getParamType(param);
             if (name != null && name != 'context') {
               processedKeys.add('${result.path}::$name');
-              paramFields += '    late $type $name;\n';
               param.accept(extractor);
             }
           }
@@ -154,13 +176,17 @@ class TransplantExtractor {
         final body = buildMethod.body;
         if (body is BlockFunctionBody) {
           buildBody = body.block.statements
-              .map((s) => '    ${Skeletonizer.skeletonize(s, result)}')
+              .map(
+                (s) =>
+                    '    ${Skeletonizer.skeletonize(s, result, rewriter: rewriter)}',
+              )
               .join('\n');
         } else if (body is ExpressionFunctionBody) {
           buildBody =
-              '    return ${Skeletonizer.skeletonize(body.expression, result)};';
+              '    return ${Skeletonizer.skeletonize(body.expression, result, rewriter: rewriter)};';
         } else {
-          buildBody = '    ${Skeletonizer.skeletonize(body, result)}';
+          buildBody =
+              '    ${Skeletonizer.skeletonize(body, result, rewriter: rewriter)}';
         }
 
         final payload = RebuildScopeVisitor.extractScopeFromBody(
@@ -183,13 +209,16 @@ class TransplantExtractor {
           continue;
         }
         extractor.memberCode +=
-            '\n${Skeletonizer.skeletonize(member, result)}\n';
+            '\n${Skeletonizer.skeletonize(member, result, rewriter: rewriter)}\n';
         member.accept(extractor);
       }
     } else if (scopeNode is Block) {
       // Handle a raw block of code (uncommon but supported)
       buildBody = scopeNode.statements
-          .map((s) => '    ${Skeletonizer.skeletonize(s, result)}')
+          .map(
+            (s) =>
+                '    ${Skeletonizer.skeletonize(s, result, rewriter: rewriter)}',
+          )
           .join('\n');
       scopeNode.accept(extractor);
     } else if (scopeNode is FunctionExpression) {
@@ -197,21 +226,23 @@ class TransplantExtractor {
       final body = scopeNode.body;
       if (body is BlockFunctionBody) {
         buildBody = body.block.statements
-            .map((s) => '    ${Skeletonizer.skeletonize(s, result)}')
+            .map(
+              (s) =>
+                  '    ${Skeletonizer.skeletonize(s, result, rewriter: rewriter)}',
+            )
             .join('\n');
       } else if (body is ExpressionFunctionBody) {
         buildBody =
-            '    return ${Skeletonizer.skeletonize(body.expression, result)};';
+            '    return ${Skeletonizer.skeletonize(body.expression, result, rewriter: rewriter)};';
       } else {
-        buildBody = '    ${Skeletonizer.skeletonize(body, result)}';
+        buildBody =
+            '    ${Skeletonizer.skeletonize(body, result, rewriter: rewriter)}';
       }
 
       if (scopeNode.parameters != null) {
         for (final param in scopeNode.parameters!.parameters) {
           final name = _getParamName(param);
-          final type = _getParamType(param, scopeNode, match.type);
           if (name != null && name != 'context') {
-            paramFields += '    late $type $name;\n';
             param.accept(extractor);
           }
         }
@@ -222,6 +253,10 @@ class TransplantExtractor {
       buildBody = '    return ${Skeletonizer.skeletonize(scopeNode, result)};';
       scopeNode.accept(extractor);
     }
+
+    paramFields = liftedFields
+        .map((f) => '    late ${f.type} ${f.name};')
+        .join('\n');
 
     // Recursively resolve cross-file references found by the visitor
     final pending = List<({String filePath, String name})>.from(
@@ -319,6 +354,12 @@ class TransplantExtractor {
       externalImports.add(src.endsWith(';') ? src : '$src;');
     }
 
+    final initState = _buildInitState(
+      liftedFields,
+      liftedGlobals,
+      extractor.memberCode,
+    );
+
     // Generate the final self-contained file
     return '''
 ${externalImports.join('\n')}
@@ -333,7 +374,7 @@ $widgetConstructor
 
 class _GeneratedWidgetState extends State<GeneratedWidget> {
 $paramFields
-
+$initState
 ${extractor.memberCode}
 
   @override
@@ -344,6 +385,89 @@ $buildBody
 
 $fullClassCode
 ''';
+  }
+
+  /// Emits an `initState` that seeds every lifted field from a named fixture.
+  ///
+  /// The transplanted scope no longer receives its inputs from the surrounding
+  /// app, so each lifted field needs a value. Rather than invent one, this
+  /// emits a reference to a conventionally named symbol — field `wallets`
+  /// becomes `wallets = fixtureWallets;` — which the caller then defines
+  /// alongside the isolated file. The convention makes the required symbol
+  /// names predictable instead of leaving them to be rediscovered per scope.
+  ///
+  /// Returns an empty string when nothing was lifted, or when the transplanted
+  /// class already brought its own `initState` in [memberCode] — overwriting a
+  /// real one would discard setup the scope depends on.
+  String _buildInitState(
+    List<CapturedVariable> lifted,
+    List<String> globals,
+    String memberCode,
+  ) {
+    if (lifted.isEmpty && globals.isEmpty) return '';
+    if (RegExp(r'\bvoid\s+initState\s*\(').hasMatch(memberCode)) return '';
+
+    final assignments = [
+      // Globals first: a field initialiser may read one.
+      ...globals.map((g) => '    $g = ${g}Value;'),
+      ...lifted.map((f) => '    ${f.name} = ${_fixtureNameFor(f.name)};'),
+    ].join('\n');
+
+    return '''
+
+  @override
+  void initState() {
+    super.initState();
+$assignments
+  }
+''';
+  }
+
+  /// `wallets` -> `fixtureWallets`, `_controller` -> `fixtureController`.
+  String _fixtureNameFor(String field) {
+    final bare = field.replaceFirst(RegExp(r'^_+'), '');
+    if (bare.isEmpty) return 'fixture';
+    return 'fixture${bare[0].toUpperCase()}${bare.substring(1)}';
+  }
+
+  /// Drops a type's outer nullability so it can back a `late` field.
+  ///
+  /// Only the trailing `?` is removed. Stripping every `?` in the string would
+  /// rewrite the type's interior — `(Wallet?, Wallet?)` became `(Wallet, Wallet)`
+  /// and `Map<String, int?>` became `Map<String, int>`, neither of which is the
+  /// declared type.
+  String _nonNullable(String type) =>
+      type.endsWith('?') ? type.substring(0, type.length - 1) : type;
+
+  /// The parameters of [scopeNode] that become fields on the generated State.
+  ///
+  /// A transplanted scope no longer gets called with arguments, so whatever it
+  /// declared as a parameter has to live on the State instead. `context` is the
+  /// exception — `State` already provides one.
+  List<CapturedVariable> _liftedParameters(
+    AstNode scopeNode,
+    IsolationMatch match,
+  ) {
+    final lifted = <CapturedVariable>[];
+
+    void add(FormalParameter param, String type) {
+      final name = _getParamName(param);
+      if (name == null || name == 'context') return;
+      lifted.add(CapturedVariable(name, type, lifted.length));
+    }
+
+    if (scopeNode is ClassDeclaration) {
+      final buildMethod = findBuildMethod(scopeNode);
+      for (final param in buildMethod?.parameters?.parameters ?? const []) {
+        add(param, _getParamType(param));
+      }
+    } else if (scopeNode is FunctionExpression) {
+      for (final param in scopeNode.parameters?.parameters ?? const []) {
+        add(param, _getParamType(param, scopeNode, match.type));
+      }
+    }
+
+    return lifted;
   }
 
   /// Extracts the name of a formal parameter.
@@ -383,7 +507,7 @@ $fullClassCode
           if (typeStr != 'dynamic' &&
               typeStr != 'Object?' &&
               typeStr != 'Object') {
-            return typeStr.replaceAll('?', '');
+            return _nonNullable(typeStr);
           }
         }
       }
@@ -403,7 +527,7 @@ $fullClassCode
             if (typeStr != 'dynamic' &&
                 typeStr != 'Object?' &&
                 typeStr != 'Object') {
-              return typeStr.replaceAll('?', '');
+              return _nonNullable(typeStr);
             }
           }
         }
@@ -449,9 +573,9 @@ $fullClassCode
                     typeName.contains('BlocSelector') ||
                     typeName.contains('BlocConsumer')) &&
                 args.length >= 2) {
-              return args[1].trim().replaceAll('?', '');
+              return _nonNullable(args[1].trim());
             } else if (typeName.contains('Consumer') && args.isNotEmpty) {
-              return args[0].trim().replaceAll('?', '');
+              return _nonNullable(args[0].trim());
             }
           }
         }

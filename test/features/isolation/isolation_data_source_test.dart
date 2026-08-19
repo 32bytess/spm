@@ -151,4 +151,61 @@ void main() {
     expect(content, contains('dynamic value;'));
     expect(content, contains('Widget child;'));
   });
+
+  group('a transplanted scope keeps the bindings it used to close over', () {
+    late String content;
+
+    setUp(() async {
+      await dataSource
+          .isolate(directories: [testProjectDir], outputDir: outputDir)
+          .drain();
+
+      content = Directory(p.join(outputDir, 'BlocBuilder'))
+          .listSync(recursive: false)
+          .whereType<File>()
+          .firstWhere((f) => f.path.contains('captures'))
+          .readAsStringSync();
+    });
+
+    test('lifts variables captured from the enclosing method', () {
+      // `onlyActive` and `heading` belong to buildList(), not to the callback,
+      // so nothing would declare them once the callback is transplanted.
+      expect(content, contains('late bool onlyActive;'));
+      expect(content, contains('late String heading;'));
+    });
+
+    test('lifts the builder callback parameter', () {
+      expect(content, contains('late CaptureState state;'));
+    });
+
+    test('seeds every lifted binding from a conventionally named fixture', () {
+      expect(content, contains('void initState()'));
+      expect(content, contains('super.initState();'));
+      expect(content, contains('state = fixtureState;'));
+      expect(content, contains('onlyActive = fixtureOnlyActive;'));
+      expect(content, contains('heading = fixtureHeading;'));
+    });
+
+    test('seeds cross-file globals from their <name>Value counterpart', () {
+      expect(content, contains('captureTheme = captureThemeValue;'));
+    });
+
+    test('restores casts that promotion no longer supplies', () {
+      // `state` is a field now, and Dart does not promote fields, so the
+      // original `state.items` would not resolve.
+      expect(content, contains('(state as CaptureLoaded).items'));
+      expect(content, isNot(contains('? state.items')));
+    });
+
+    test('never copies a `context` field over State.context', () {
+      // CaptureDialog declares one and is inlined whole, which is fine — what
+      // must not happen is that field being copied onto the generated State,
+      // where it would shadow State.context.
+      final state = content.substring(
+        content.indexOf('class _GeneratedWidgetState'),
+      );
+      final stateBody = state.substring(0, state.indexOf('\n}'));
+      expect(stateBody, isNot(contains('BuildContext context;')));
+    });
+  });
 }

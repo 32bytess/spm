@@ -78,19 +78,26 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
             continue;
           }
 
-          final TreeFeaturesSet treeFeatures = await treeExtractor.extract(
+          final extraction = await treeExtractor.extract(
             scope,
             collection: collection,
           );
+          final TreeFeaturesSet treeFeatures = extraction.features;
+          final root = context.contextRoot.root.path;
 
           keptRows++;
           yield AnalysisDataEvent(
             result: AnalysisResultModel.fromTreeFeatures(
               treeFeatures: treeFeatures,
               scope: scope,
-              filePath: p.relative(
-                scope.filePath,
-                from: context.contextRoot.root.path,
+              filePath: p.relative(scope.filePath, from: root),
+              dependencyFiles: _withinRoot(
+                extraction.closure.dependencyFiles,
+                root,
+              ),
+              unresolvedDependencies: _withinRoot(
+                extraction.closure.unresolvedDependencies,
+                root,
               ),
             ),
           );
@@ -104,6 +111,22 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
       scopesByType: scopesByType,
       keptRows: keptRows,
     );
+  }
+
+  /// Project files from a closure, relative to the analysis root.
+  ///
+  /// Everything outside the root is dropped: the closure reaches into the SDK
+  /// and the pub cache, and those are neither editable by a commit nor
+  /// meaningful as a repo-relative path. Filtering here rather than in the
+  /// extractor keeps the root — which the extractor does not know — in the one
+  /// place that does.
+  List<String> _withinRoot(List<String> paths, String root) {
+    final within = <String>[];
+    for (final path in paths) {
+      if (p.isWithin(root, path)) within.add(p.relative(path, from: root));
+    }
+    within.sort();
+    return within;
   }
 
   @override

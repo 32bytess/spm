@@ -32,6 +32,30 @@ class AnalysisResultEntity {
   final int helperWidgetCount;
   final int helperMaxWidgetNestingDepth;
 
+  /// Repo-relative files whose contents contributed to the metrics above, the
+  /// declaring file included.
+  ///
+  /// The metrics are not a function of [filePath] alone: helpers resolve across
+  /// libraries and custom child widgets have their `build()` merged in, so an
+  /// edit in another file moves these numbers. Mining commit history by "touched
+  /// the declaring file" therefore misses real changes, and misses them hardest
+  /// where child trees are deepest.
+  final List<String> dependencyFiles;
+
+  /// Files in that closure which could not be read — unresolvable, or resolved
+  /// while carrying an error-severity diagnostic.
+  ///
+  /// Non-empty means the row is INCOMPLETE by an unknown amount: an unreadable
+  /// child contributes nothing and its subtree silently vanishes from the
+  /// totals, while one that resolves with errors has null types and its widgets
+  /// count as value objects. Neither is visible in the scanned/skipped counts,
+  /// which guard only the file being scanned. Comparing two revisions where this
+  /// differs measures resolution state, not a code change.
+  final List<String> unresolvedDependencies;
+
+  /// Whether every file the metrics depend on was read successfully.
+  bool get closureResolved => unresolvedDependencies.isEmpty;
+
   AnalysisResultEntity({
     required this.instanceId,
     required this.filePath,
@@ -51,5 +75,7 @@ class AnalysisResultEntity {
     required this.valueObjectAllocCount,
     required this.helperWidgetCount,
     required this.helperMaxWidgetNestingDepth,
+    this.dependencyFiles = const [],
+    this.unresolvedDependencies = const [],
   });
 }

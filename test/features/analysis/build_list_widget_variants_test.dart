@@ -15,7 +15,9 @@ void main() {
       results.firstWhere((r) => r.scopeName == scopeName);
 
   setUpAll(() async {
-    results = await getResultsForFixture('build_tree/list_widget_variants.dart');
+    results = await getResultsForFixture(
+      'build_tree/list_widget_variants.dart',
+    );
     expect(
       results,
       hasLength(5),

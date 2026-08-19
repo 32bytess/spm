@@ -5,10 +5,12 @@ import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/diagnostic/diagnostic.dart' show Severity;
 import 'package:spm/src/core/errors/exceptions.dart';
 import 'package:spm/src/core/types.dart';
 import 'package:spm/src/features/analysis/data/data_sources/extensions/ast_node_extensions.dart';
 
+import '../sets/closure_set.dart';
 import '../sets/rebuild_scope_instance_set.dart';
 import '../sets/tree_features_set.dart';
 import '../visitors/build_metrics_visitor.dart';
@@ -30,22 +32,69 @@ typedef _LibraryIndex = ({
   Map<String, FunctionDeclaration> topLevelFunctions,
 });
 
+/// One library's index plus WHY it is usable or not.
+///
+/// The index alone cannot answer that: a library that resolves while carrying
+/// error-severity diagnostics produces a perfectly well-formed index whose types
+/// are null, which is the failure the scanned-file gate exists to prevent. The
+/// cache therefore remembers the verdict, not just the result — otherwise a
+/// second scope reaching the same broken library through a cache hit would be
+/// recorded as clean.
+typedef _LibraryEntry = ({_LibraryIndex? index, String? path, bool hadErrors});
+
+/// Accumulates one `extract()` call's closure.
+///
+/// Per call, not per cache: the library cache lives for the whole run and is
+/// shared by every scope, so a cache hit must still be recorded against the
+/// scope that asked. Otherwise the first scope to touch a file would be the only
+/// one that admits depending on it.
+class _ClosureRecorder {
+  final Set<String> resolved = {};
+  final Set<String> unresolved = {};
+
+  /// Records one library lookup. [key] is its path when known, its URI
+  /// otherwise — a library that never resolved to a file has no path to give.
+  void note(String uri, _LibraryEntry entry) {
+    final key = entry.path ?? uri;
+    if (entry.index == null || entry.hadErrors) {
+      unresolved.add(key);
+      resolved.remove(key);
+    } else if (!unresolved.contains(key)) {
+      resolved.add(key);
+    }
+  }
+
+  /// The declaring file itself: always a dependency of its own scope.
+  void noteSelf(String? path) {
+    if (path != null) resolved.add(path);
+  }
+
+  ClosureSet toResult() => (
+    dependencyFiles: resolved.toList()..sort(),
+    unresolvedDependencies: unresolved.toList()..sort(),
+  );
+}
+
 class TreeExtractor {
   /// Cache libraryUri -> [_LibraryIndex]. Holds every method of every class
   /// (not just `build`) plus top-level functions, so helper bodies of recursed
   /// child widgets — and State classes of StatefulWidget children — can be
   /// resolved without re-parsing.
-  final _libraryCache = <String, _LibraryIndex?>{};
+  final _libraryCache = <String, _LibraryEntry>{};
 
-  Future<TreeFeaturesSet> extract(
+  Future<ExtractionSet<TreeFeaturesSet>> extract(
     RebuildScopeInstance scope, {
     required AnalysisContextCollection collection,
   }) async {
+    final closure = _ClosureRecorder();
+    closure.noteSelf(scope.filePath);
     try {
       final acc = _MetricsAccumulator();
 
       final body = scope.body;
-      if (body == null) return acc.toResult();
+      if (body == null) {
+        return (features: acc.toResult(), closure: closure.toResult());
+      }
 
       // Dedup sets shared across the whole traversal.
       final visitedClasses = <String>{}; // build bodies, keyed libraryUri#class
@@ -79,6 +128,7 @@ class TreeExtractor {
         acc: acc,
         queue: queue,
         analyzedHelpers: analyzedHelpers,
+        closure: closure,
       );
 
       // Seed the BFS with the root build's direct custom children.
@@ -93,9 +143,10 @@ class TreeExtractor {
         acc: acc,
         visitedClasses: visitedClasses,
         analyzedHelpers: analyzedHelpers,
+        closure: closure,
       );
 
-      return acc.toResult();
+      return (features: acc.toResult(), closure: closure.toResult());
     } on TreeExtractionException {
       rethrow;
     } catch (e, stackTrace) {
@@ -133,6 +184,7 @@ class TreeExtractor {
     required _MetricsAccumulator acc,
     required Queue<_ChildWork> queue,
     required Set<String> analyzedHelpers,
+    required _ClosureRecorder closure,
   }) async {
     final pending = Queue<_HelperWork>();
     for (final ref in refs) {
@@ -141,7 +193,7 @@ class TreeExtractor {
 
     while (pending.isNotEmpty) {
       final work = pending.removeFirst();
-      final resolved = await _resolveHelperBody(work, collection);
+      final resolved = await _resolveHelperBody(work, collection, closure);
       if (resolved == null) continue;
       if (!analyzedHelpers.add(resolved.dedupKey)) continue;
 
@@ -201,6 +253,7 @@ class TreeExtractor {
   _resolveHelperBody(
     _HelperWork work,
     AnalysisContextCollection collection,
+    _ClosureRecorder closure,
   ) async {
     final element = work.ref.element;
     final name = work.ref.name;
@@ -210,7 +263,7 @@ class TreeExtractor {
     if (element is ExecutableElement) {
       final enclosing = element.enclosingElement;
       final targetLibraryUri = element.library.identifier;
-      final index = await _indexLibrary(targetLibraryUri, collection);
+      final index = await _indexLibrary(targetLibraryUri, collection, closure);
       if (index == null) return null;
 
       if (enclosing is InterfaceElement) {
@@ -237,7 +290,7 @@ class TreeExtractor {
     }
 
     // Unresolved (standalone fixtures): fall back to a same-class name lookup.
-    final index = await _indexLibrary(work.libraryUri, collection);
+    final index = await _indexLibrary(work.libraryUri, collection, closure);
     final className = work.classId.split('#').last;
     final method = index?.classMethods[className]?[name];
     if (method == null) return null;
@@ -259,6 +312,7 @@ class TreeExtractor {
     required _MetricsAccumulator acc,
     required Set<String> visitedClasses,
     required Set<String> analyzedHelpers,
+    required _ClosureRecorder closure,
   }) async {
     while (queue.isNotEmpty) {
       final current = queue.removeFirst();
@@ -268,7 +322,11 @@ class TreeExtractor {
       if (!visitedClasses.add(widgetClassId)) continue;
 
       final libraryUri = element.library.identifier;
-      final index = await _indexLibrary(libraryUri, collection);
+      final index = await _indexLibrary(libraryUri, collection, closure);
+      // A child whose library will not resolve contributes NOTHING, and its
+      // whole subtree disappears from the totals with it. `closure` has already
+      // recorded that, so the row can be rejected downstream rather than being
+      // quietly short by an unknown amount.
       if (index == null) continue;
 
       final widgetName = element.name;
@@ -308,6 +366,7 @@ class TreeExtractor {
         acc: acc,
         queue: queue,
         analyzedHelpers: analyzedHelpers,
+        closure: closure,
       );
 
       // Enqueue grandchildren from this build body.
@@ -368,24 +427,49 @@ class TreeExtractor {
   }
 
   /// Resolves and indexes a library by URI using cached lookups.
+  ///
+  /// Records the lookup in [closure] on every path, cache hits included: the
+  /// cache outlives one scope, so a hit means "this scope also depends on that
+  /// library", not "already accounted for".
   Future<_LibraryIndex?> _indexLibrary(
     String libraryUri,
     AnalysisContextCollection collection,
+    _ClosureRecorder closure,
   ) async {
-    if (_libraryCache.containsKey(libraryUri)) {
-      return _libraryCache[libraryUri];
+    final cached = _libraryCache[libraryUri];
+    if (cached != null) {
+      closure.note(libraryUri, cached);
+      return cached.index;
+    }
+
+    _LibraryEntry remember(_LibraryEntry entry) {
+      _libraryCache[libraryUri] = entry;
+      closure.note(libraryUri, entry);
+      return entry;
     }
 
     final filePath = _resolveFilePath(libraryUri, collection);
-    if (filePath == null) return _libraryCache[libraryUri] = null;
+    if (filePath == null) {
+      return remember((index: null, path: null, hadErrors: false)).index;
+    }
 
     try {
       final context = collection.contextFor(filePath);
       final session = context.currentSession;
       final definingUnit = await session.getResolvedUnit(filePath);
       if (definingUnit is! ResolvedUnitResult) {
-        return _libraryCache[libraryUri] = null;
+        return remember((index: null, path: filePath, hadErrors: false)).index;
       }
+
+      // A unit that carries an error-severity diagnostic still resolves — it
+      // just resolves its types to null, so every widget in it classifies as a
+      // value object. Reading it produces a well-formed index full of wrong
+      // numbers, which is worse than reading nothing. The index is still built
+      // (dropping it would change the metrics this build already produces);
+      // what changes is that the row now says so.
+      var hadErrors = definingUnit.diagnostics.any(
+        (d) => d.severity == Severity.error,
+      );
 
       final classMethods = <String, Map<String, MethodDeclaration>>{};
       final classDecls = <String, ClassDeclaration>{};
@@ -400,6 +484,11 @@ class TreeExtractor {
             ? definingUnit
             : await session.getResolvedUnit(fragmentPath);
         if (unitResult is! ResolvedUnitResult) continue;
+        // A broken `part` poisons the library exactly as the defining unit
+        // would.
+        hadErrors =
+            hadErrors ||
+            unitResult.diagnostics.any((d) => d.severity == Severity.error);
 
         for (final declaration in unitResult.unit.declarations) {
           if (declaration is ClassDeclaration) {
@@ -413,14 +502,18 @@ class TreeExtractor {
         }
       }
 
-      return _libraryCache[libraryUri] = (
-        classMethods: classMethods,
-        classDecls: classDecls,
-        topLevelFunctions: topLevelFunctions,
-      );
+      return remember((
+        index: (
+          classMethods: classMethods,
+          classDecls: classDecls,
+          topLevelFunctions: topLevelFunctions,
+        ),
+        path: filePath,
+        hadErrors: hadErrors,
+      )).index;
     } catch (_) {
       // Cache the miss to avoid re-trying failed files.
-      return _libraryCache[libraryUri] = null;
+      return remember((index: null, path: filePath, hadErrors: false)).index;
     }
   }
 
