@@ -17,6 +17,23 @@ class IsolationDataSourceImpl implements IsolationDataSource {
   IsolationDataSourceImpl({TransplantExtractor? extractor})
     : _extractor = extractor ?? TransplantExtractor();
 
+  /// Formats every isolated file so the output is diffable.
+  ///
+  /// The transplant assembles source by concatenating skeletonised fragments,
+  /// which preserves each fragment's original indentation and leaves the result
+  /// unevenly laid out. Running the SDK formatter over the output directory
+  /// normalises that, so two isolate runs differ only where the code differs.
+  ///
+  /// Best-effort: a scope that failed to produce parseable Dart should still be
+  /// written out for inspection, so a formatter failure is not propagated.
+  Future<void> _formatOutput(String outputDir) async {
+    try {
+      await Process.run('dart', ['format', outputDir]);
+    } catch (_) {
+      // Formatting is cosmetic; never fail an extraction over it.
+    }
+  }
+
   /// Ensures `.dart_tool/package_config.json` exists for [dir].
   ///
   /// First tries `dart pub get` / `flutter pub get`. If both fail (e.g. SDK
@@ -163,6 +180,8 @@ class IsolationDataSourceImpl implements IsolationDataSource {
         jsonlPath,
       ).writeAsStringSync(mapping.map((m) => jsonEncode(m)).join('\n'));
     }
+
+    await _formatOutput(outputDir);
 
     yield IsolationSummaryEvent(
       isolatedCount: isolatedCount,

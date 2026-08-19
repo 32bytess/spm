@@ -16,7 +16,9 @@ void main() {
       results.firstWhere((r) => r.scopeName == scopeName);
 
   setUpAll(() async {
-    results = await getResultsForFixture('build_tree/local_fn_and_returns.dart');
+    results = await getResultsForFixture(
+      'build_tree/local_fn_and_returns.dart',
+    );
     expect(
       results,
       hasLength(4),
@@ -26,7 +28,10 @@ void main() {
 
   group('local function invoked inside a loop', () {
     test('the loop is counted', () {
-      expect(byName('_LocalFnInLoopExampleState').treeIterationCount, equals(1));
+      expect(
+        byName('_LocalFnInLoopExampleState').treeIterationCount,
+        equals(1),
+      );
     });
 
     test('its widgets are attributed to the per-element scope', () {

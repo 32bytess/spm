@@ -19,13 +19,25 @@ class Skeletonizer {
     'SvgPicture',
   };
 
-  static String skeletonize(AstNode node, ResolvedUnitResult result) {
+  /// [rewriter] contributes extra edits alongside the image replacements —
+  /// used by the transplant to re-insert casts that type promotion used to
+  /// supply. Edits from both sources are applied in a single right-to-left
+  /// pass so their offsets stay valid.
+  static String skeletonize(
+    AstNode node,
+    ResolvedUnitResult result, {
+    SourceRewriter? rewriter,
+  }) {
     final collector = _ReplacementCollector(result);
     node.accept(collector);
 
     String source = result.content.substring(node.offset, node.end);
-    final replacements = collector.replacements.toList()
-      ..sort((a, b) => b.offset.compareTo(a.offset));
+    final replacements = <Replacement>[...collector.replacements];
+    if (rewriter != null) {
+      node.accept(rewriter);
+      replacements.addAll(rewriter.replacements);
+    }
+    replacements.sort((a, b) => b.offset.compareTo(a.offset));
 
     for (final r in replacements) {
       final relativeOffset = r.offset - node.offset;
@@ -33,7 +45,7 @@ class Skeletonizer {
       source = source.replaceRange(
         relativeOffset,
         relativeOffset + r.length,
-        placeholder,
+        r.text,
       );
     }
 
@@ -41,14 +53,22 @@ class Skeletonizer {
   }
 }
 
-class _Replacement {
+/// A single span of source to overwrite.
+class Replacement {
   final int offset;
   final int length;
-  _Replacement(this.offset, this.length);
+  final String text;
+  Replacement(this.offset, this.length, this.text);
+}
+
+/// A visitor that contributes [Replacement]s to [Skeletonizer.skeletonize].
+abstract class SourceRewriter extends RecursiveAstVisitor<void> {
+  /// Edits collected during traversal.
+  List<Replacement> get replacements;
 }
 
 class _ReplacementCollector extends RecursiveAstVisitor<void> {
-  final List<_Replacement> replacements = [];
+  final List<Replacement> replacements = [];
   final ResolvedUnitResult result;
 
   _ReplacementCollector(this.result);
@@ -56,7 +76,9 @@ class _ReplacementCollector extends RecursiveAstVisitor<void> {
   @override
   void visitInstanceCreationExpression(InstanceCreationExpression node) {
     if (_isImage(node)) {
-      replacements.add(_Replacement(node.offset, node.length));
+      replacements.add(
+        Replacement(node.offset, node.length, Skeletonizer.placeholder),
+      );
       return;
     }
     super.visitInstanceCreationExpression(node);
@@ -65,7 +87,9 @@ class _ReplacementCollector extends RecursiveAstVisitor<void> {
   @override
   void visitMethodInvocation(MethodInvocation node) {
     if (_isImage(node)) {
-      replacements.add(_Replacement(node.offset, node.length));
+      replacements.add(
+        Replacement(node.offset, node.length, Skeletonizer.placeholder),
+      );
       return;
     }
     super.visitMethodInvocation(node);

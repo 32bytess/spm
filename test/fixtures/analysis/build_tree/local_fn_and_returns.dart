@@ -22,7 +22,8 @@ class _LocalFnInLoopExampleState extends State<LocalFnInLoopExample> {
 
   @override
   Widget build(BuildContext context) {
-    Widget row(int i) => Padding(padding: EdgeInsets.all(i.toDouble()), child: Text('$i'));
+    Widget row(int i) =>
+        Padding(padding: EdgeInsets.all(i.toDouble()), child: Text('$i'));
 
     return Column(children: items.map(row).toList());
   }

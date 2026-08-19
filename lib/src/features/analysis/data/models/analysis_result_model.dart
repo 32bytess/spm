@@ -22,6 +22,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
     required super.valueObjectAllocCount,
     required super.helperWidgetCount,
     required super.helperMaxWidgetNestingDepth,
+    super.dependencyFiles,
+    super.unresolvedDependencies,
   });
 
   factory AnalysisResultModel.fromEntity(AnalysisResultEntity entity) {
@@ -44,6 +46,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
       valueObjectAllocCount: entity.valueObjectAllocCount,
       helperWidgetCount: entity.helperWidgetCount,
       helperMaxWidgetNestingDepth: entity.helperMaxWidgetNestingDepth,
+      dependencyFiles: entity.dependencyFiles,
+      unresolvedDependencies: entity.unresolvedDependencies,
     );
   }
 
@@ -67,6 +71,11 @@ class AnalysisResultModel extends AnalysisResultEntity {
       'valueObjectAllocCount': valueObjectAllocCount,
       'helperWidgetCount': helperWidgetCount,
       'helperMaxWidgetNestingDepth': helperMaxWidgetNestingDepth,
+      // Appended after the 14 metrics so column order for every existing
+      // consumer is unchanged.
+      'closureResolved': closureResolved.toInt(),
+      'dependencyFiles': dependencyFiles,
+      'unresolvedDependencies': unresolvedDependencies,
     };
   }
 
@@ -74,6 +83,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
     required TreeFeaturesSet treeFeatures,
     required RebuildScopeInstance scope,
     required String filePath,
+    List<String> dependencyFiles = const [],
+    List<String> unresolvedDependencies = const [],
   }) {
     return AnalysisResultModel(
       instanceId: scope.instanceId,
@@ -94,6 +105,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
       valueObjectAllocCount: treeFeatures.valueObjectAllocCount,
       helperWidgetCount: treeFeatures.helperWidgetCount,
       helperMaxWidgetNestingDepth: treeFeatures.helperMaxWidgetNestingDepth,
+      dependencyFiles: dependencyFiles,
+      unresolvedDependencies: unresolvedDependencies,
     );
   }
 }

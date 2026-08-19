@@ -117,8 +117,6 @@ class ProfilerDataSourceImpl implements ProfilerDataSource {
           );
         }
       });
-
-      return completer.future;
     } catch (e, stackTrace) {
       debugOnRebuildDirtyWidget = prevCallback;
       _isMonitoring = false;
@@ -127,6 +125,8 @@ class ProfilerDataSourceImpl implements ProfilerDataSource {
         stackTrace.toString(),
       );
     }
+
+    return completer.future;
   }
 
   @override
@@ -219,8 +219,6 @@ class ProfilerDataSourceImpl implements ProfilerDataSource {
         targetFrameNumber =
             WidgetsBinding.instance.platformDispatcher.frameData.frameNumber;
       });
-
-      return completer.future;
     } catch (e, st) {
       cleanup();
       throw PerformanceMonitoringException(
@@ -228,5 +226,7 @@ class ProfilerDataSourceImpl implements ProfilerDataSource {
         st.toString(),
       );
     }
+
+    return completer.future;
   }
 }

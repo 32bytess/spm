@@ -1,5 +1,65 @@
 # Changelog
 
+## 0.4.0
+
+### Added
+
+Every `analyze` row now reports the files its metrics were computed from, and whether all of them
+could be read.
+
+- Three columns appended after the 14 metrics, so column order for existing consumers is unchanged:
+  `dependencyFiles`, `unresolvedDependencies`, and `closureResolved` (`1`/`0`). Paths are relative
+  to the analyzed project root and sorted; closure entries outside that root, such as the SDK and
+  the pub cache, are dropped, since neither is editable by a commit in the analyzed repository.
+- `dependencyFiles` lists the transitive closure a row actually depends on, the declaring file
+  included. A scope's metrics are not a function of `filePath`: helper methods and getters resolve
+  across libraries, and every custom child widget's `build()` is merged into the totals. Selecting
+  revisions by "touched the declaring file" therefore drops real changes, and drops them hardest in
+  well-composed code, where child trees are deepest.
+- `unresolvedDependencies` lists closure libraries that could not be read, by path where one is
+  known and by library URI otherwise. A non-empty list means the row is incomplete by an unknown
+  amount rather than absent, so it can be rejected downstream.
+
+### Fixed
+
+- A closure library that resolves while carrying an error-severity diagnostic is now recorded as
+  unresolved. Such a library resolves its types to null, so its widgets classify as value objects
+  and its subtree lands in the wrong metrics. The scanned/skipped counts in the run summary never
+  caught this: they guard only the file being scanned, not the files its metrics are read from.
+  The index is still built, so the numbers this release emits are unchanged; what changes is that
+  the row now says the numbers are untrustworthy.
+- The library cache records its verdict alongside the index, and every lookup is attributed to the
+  scope that made it. The cache lives for a whole run, so a second scope reaching a broken library
+  through a cache hit used to be recorded as clean, and a shared dependency appeared only on the
+  first row that touched it.
+- `isolate` lifts the bindings a rebuild scope closed over. A builder callback reads parameters and
+  locals of the method it sits in, and a scope on a package-supplied base class such as `GetView`
+  reads members it inherits; neither travels with the transplanted source, so the isolated file
+  referenced names nothing declared.
+- Lifting a promoted parameter to a field costs it its promotion, because Dart does not promote
+  fields. References whose promoted type was a proper subtype of the declared type are now wrapped,
+  so `state.wallets` becomes `(state as WalletLoaded).wallets` and the isolated file still compiles.
+- A field named `context` is no longer copied onto the generated `State`, where it shadowed
+  `State.context` and broke the output.
+- Stripping nullability from a lifted field's type touched the whole type string, rewriting
+  `(Wallet?, Wallet?)` to `(Wallet, Wallet)` and `Map<String, int?>` to `Map<String, int>`. Only the
+  trailing `?` is dropped now.
+- `monitorDataFlow` and `monitorPerformance` returned their completer's future from inside a `try`,
+  which `lints_core` flags and which never routed a rejection through that `catch` anyway. The
+  return moved after the block; the guarded statements and the error path are unchanged.
+
+### Changed
+
+- `isolate` generates an `initState` that seeds every lifted field from a conventionally named
+  symbol: field `wallets` is assigned `fixtureWallets`, and a cross-file project global `foo` is
+  assigned `fooValue`. The names a scope needs are predictable instead of being rediscovered per
+  scope. A scope that brought its own `initState` keeps it.
+- `isolate` runs `dart format` over its output directory. The transplant concatenates fragments that
+  keep their original indentation, so two runs used to differ in layout as well as in code.
+  Formatting failures are ignored: an unparseable scope is still written out for inspection.
+- `TreeExtractor.extract` returns an `ExtractionSet<TreeFeaturesSet>` record, pairing the feature
+  set with its closure. This type is internal to `lib/src/`; the public API is unchanged.
+
 ## 0.3.0
 
 ### Fixed

@@ -33,6 +33,10 @@ lists what each fix changed, and the wiki's
 [Extracted Features](https://github.com/32bytess/spm/wiki/Extracted-Features) page carries the
 current definition of every field.
 
+0.4.0 leaves those numbers alone. It appends three columns that report which files each row was
+computed from and whether all of them could be read, so 0.3.0 and 0.4.0 metrics can still be
+compared.
+
 ## Install
 
 Install the executable globally:
