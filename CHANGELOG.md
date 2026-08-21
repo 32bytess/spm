@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.1
+
+### Fixed
+
+- `isolate` read an extension type's name through `ExtensionTypeDeclaration.primaryConstructor`,
+  which analyzer 14 deprecates in favour of `namePart`. Since the package supports analyzer 13 as
+  well, where `namePart` does not exist on that node, the name now comes from the declaration's
+  `ClassNamePart` child, which both versions expose. Behaviour is unchanged; the deprecation warning
+  that cost points on the pub.dev static analysis report is gone.
+
 ## 0.5.0
 
 Every fix below changes what `isolate` writes, and the first one changes the metrics `analyze`

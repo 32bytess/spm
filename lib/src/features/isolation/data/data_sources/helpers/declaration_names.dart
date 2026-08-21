@@ -15,9 +15,15 @@ Set<String> declaredNames(CompilationUnitMember decl) {
   if (decl is ClassDeclaration) return {decl.namePart.typeName.lexeme};
   if (decl is EnumDeclaration) return {decl.namePart.typeName.lexeme};
   if (decl is ExtensionTypeDeclaration) {
-    // The name of an extension type sits on its primary constructor, which is
-    // a `ClassNamePart`; there is no `name` on the declaration in analyzer 13.
-    return {decl.primaryConstructor.typeName.lexeme};
+    // The name of an extension type sits on its `ClassNamePart` child, and
+    // there is no `name` on the declaration itself. The child is read through
+    // `childEntities` because the getter that exposes it directly is named
+    // `primaryConstructor` in analyzer 13 and `namePart` in analyzer 14, which
+    // deprecates the old name. Both versions are supported here.
+    for (final child in decl.childEntities) {
+      if (child is ClassNamePart) return {child.typeName.lexeme};
+    }
+    return const {};
   }
   if (decl is FunctionDeclaration) return {decl.name.lexeme};
   if (decl is MixinDeclaration) return {decl.name.lexeme};
