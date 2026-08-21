@@ -90,6 +90,14 @@ class IsolateCommand extends Command<int> {
             SpmLogger.logMessage(
               'Successfully isolated ${isolationEvent.isolatedCount} scopes into ${isolationEvent.outputDir}',
             );
+            if (isolationEvent.verifiedCount > 0) {
+              // The count that decides whether the output is usable: `spm
+              // analyze` skips any file carrying an error.
+              SpmLogger.logMessage(
+                '${isolationEvent.cleanCount} of ${isolationEvent.verifiedCount} '
+                'analyse clean (${isolationEvent.errorCount} errors in total).',
+              );
+            }
           }
           return false;
         },

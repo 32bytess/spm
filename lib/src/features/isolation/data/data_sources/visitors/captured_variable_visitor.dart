@@ -3,6 +3,7 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:path/path.dart' as p;
+import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 
 /// A name a rebuild scope reads without declaring it.
 class CapturedVariable {
@@ -159,9 +160,7 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
 
     final uri = _libraryUri(target);
     if (uri == null) return false;
-    if (uri.startsWith('dart:') || uri.startsWith('package:flutter')) {
-      return false;
-    }
+    if (isSdkLibrary(uri)) return false;
     if (!_isProjectLocal(uri)) return false;
 
     return _resolveToPath(uri) != result.path;
@@ -205,9 +204,7 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
 
     final uri = _libraryUri(enclosing);
     if (uri == null) return false;
-    if (uri.startsWith('dart:') || uri.startsWith('package:flutter')) {
-      return false;
-    }
+    if (isSdkLibrary(uri)) return false;
     return !_isProjectLocal(uri);
   }
 
