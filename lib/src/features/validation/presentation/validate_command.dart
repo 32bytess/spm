@@ -107,7 +107,7 @@ class ValidateCommand extends Command<int> {
       },
       (report) {
         if (asJson) {
-          // Raw JSON on stdout — this is the machine interface consumed by
+          // Raw JSON on stdout, the machine interface consumed by
           // the mutation pipeline; SpmLogger prefixes would break parsing.
           stdout.writeln(jsonEncode(report.toJson(strict: strict)));
         } else {

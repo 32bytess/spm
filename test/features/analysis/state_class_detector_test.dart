@@ -23,8 +23,8 @@ void main() {
       results.any((r) => r.scopeName == '_IndirectState'),
       isTrue,
       reason:
-          '_IndirectState extends BaseState which extends State<X> — '
-          'must be detected via supertype chain.',
+          '_IndirectState extends BaseState which extends State<X>, so it '
+          'must be detected via the supertype chain.',
     );
   });
 

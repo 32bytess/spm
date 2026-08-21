@@ -1,7 +1,7 @@
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:spm/src/features/validation/domain/entities/validation_report.dart';
 
-/// Check 1 — the resolved imported-library sets of base and mutation must
+/// Check 1: the resolved imported-library sets of base and mutation must
 /// be identical.
 ///
 /// Works on the element model (canonical library URIs), so import

@@ -9,7 +9,7 @@ import 'package:spm/src/core/types.dart';
 /// Usage:
 /// ```dart
 /// final writer = ProfilerLogWriter('output.jsonl');
-/// writer.write({'timestamp': '...', 'metric': 42});
+/// writer.write({'timestamp': '2026-01-01T00:00:00Z', 'metric': 42});
 /// await writer.close();
 /// ```
 ///

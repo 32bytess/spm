@@ -27,7 +27,7 @@ class _CounterTileState extends State<CounterTile> {
 }
 
 // treeNonConstWidgetCount: 3 (root: Column + CounterTile; child State build:
-//   Container — the _label() helper's Text is counted in helper widgets)
+//   Container. The _label() helper's Text is counted in helper widgets)
 // treeMaxWidgetNestingDepth: 3 (CounterTile at depth 2 + Container depth 1)
 // helperReferenceCount: 2 (root _title() + child-state _label())
 // helperWidgetCount: 2 (_title -> Text, _label -> Text)

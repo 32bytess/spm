@@ -34,7 +34,7 @@ void main() {
         equals(2),
         reason:
             'a concrete children: list on ListView builds every child on '
-            'every rebuild — the eager O(N) case the old boolean missed',
+            'every rebuild. The eager O(N) case the old boolean missed',
       );
     });
 

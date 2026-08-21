@@ -5,7 +5,7 @@ class AnalysisResultEntity {
   /// Class name of the scope, or `'<Widget>_builder'` for a builder callback.
   final String scopeName;
 
-  /// Kind of rebuild scope: `State`, `ConsumerWidget`, `BlocBuilder`, ...
+  /// Kind of rebuild scope, such as `State`, `ConsumerWidget` or `BlocBuilder`.
   final String scopeType;
 
   final int treeNonConstWidgetCount;
@@ -23,11 +23,11 @@ class AnalysisResultEntity {
   final int treeMaxIterationNestingDepth;
 
   /// Non-const widgets built per element (loops, collection-op callbacks,
-  /// lazy-list builders) — the per-element cost multiplier of a rebuild.
+  /// lazy-list builders): the per-element cost multiplier of a rebuild.
   final int iterationWidgetCount;
 
-  /// Non-const value-object allocations (EdgeInsets, TextStyle, ...) paid on
-  /// every rebuild.
+  /// Non-const value-object allocations such as `EdgeInsets` and `TextStyle`,
+  /// paid on every rebuild.
   final int valueObjectAllocCount;
   final int helperWidgetCount;
   final int helperMaxWidgetNestingDepth;
@@ -42,7 +42,7 @@ class AnalysisResultEntity {
   /// where child trees are deepest.
   final List<String> dependencyFiles;
 
-  /// Files in that closure which could not be read — unresolvable, or resolved
+  /// Files in that closure which could not be read, either unresolvable or resolved
   /// while carrying an error-severity diagnostic.
   ///
   /// Non-empty means the row is INCOMPLETE by an unknown amount: an unreadable

@@ -37,7 +37,7 @@ typedef _LibraryIndex = ({
 /// The index alone cannot answer that: a library that resolves while carrying
 /// error-severity diagnostics produces a perfectly well-formed index whose types
 /// are null, which is the failure the scanned-file gate exists to prevent. The
-/// cache therefore remembers the verdict, not just the result — otherwise a
+/// cache therefore remembers the verdict, not just the result. Otherwise a
 /// second scope reaching the same broken library through a cache hit would be
 /// recorded as clean.
 typedef _LibraryEntry = ({_LibraryIndex? index, String? path, bool hadErrors});
@@ -53,7 +53,7 @@ class _ClosureRecorder {
   final Set<String> unresolved = {};
 
   /// Records one library lookup. [key] is its path when known, its URI
-  /// otherwise — a library that never resolved to a file has no path to give.
+  /// otherwise, since a library that never resolved to a file has no path.
   void note(String uri, _LibraryEntry entry) {
     final key = entry.path ?? uri;
     if (entry.index == null || entry.hadErrors) {
@@ -78,7 +78,7 @@ class _ClosureRecorder {
 class TreeExtractor {
   /// Cache libraryUri -> [_LibraryIndex]. Holds every method of every class
   /// (not just `build`) plus top-level functions, so helper bodies of recursed
-  /// child widgets — and State classes of StatefulWidget children — can be
+  /// child widgets, and State classes of StatefulWidget children, can be
   /// resolved without re-parsing.
   final _libraryCache = <String, _LibraryEntry>{};
 
@@ -170,7 +170,7 @@ class TreeExtractor {
   /// Custom child widgets it instantiates are enqueued so their build() trees
   /// still count. Helper→helper chains are followed transitively.
   ///
-  /// Resolution: element-based when the reference resolved — methods/getters
+  /// Resolution: element-based when the reference resolved, so methods/getters
   /// of any class (same or other library) and top-level widget functions all
   /// work. Name-in-current-class is the fallback for unresolved references.
   /// Local functions are skipped: their bodies are lexically inside the
@@ -203,7 +203,7 @@ class TreeExtractor {
 
       // Const widgets in a helper body are const units like any other: they
       // belong to treeConstWidgetCount, not to helperWidgetCount. Folding
-      // both into one total made const-ness invisible inside helpers —
+      // both into one total made const-ness invisible inside helpers, and
       // swapping a helper's `Icon(...)` for `const Icon(...)` moved no
       // feature at all.
       acc.helperWidgetCount += v.widgetCount;
@@ -304,7 +304,7 @@ class TreeExtractor {
 
   /// BFS over custom child widgets: each class's `build()` merges into the
   /// non-root metrics, its helpers are analyzed, and its children are enqueued.
-  /// A StatefulWidget child has no `build()` of its own — its State class's
+  /// A StatefulWidget child has no `build()` of its own. Its State class's
   /// `build()` is what reruns on rebuild, so that is what gets analyzed.
   AsyncVoid _aggregateChildMetrics({
     required Queue<_ChildWork> queue,
@@ -461,7 +461,7 @@ class TreeExtractor {
         return remember((index: null, path: filePath, hadErrors: false)).index;
       }
 
-      // A unit that carries an error-severity diagnostic still resolves — it
+      // A unit that carries an error-severity diagnostic still resolves, but it
       // just resolves its types to null, so every widget in it classifies as a
       // value object. Reading it produces a well-formed index full of wrong
       // numbers, which is worse than reading nothing. The index is still built

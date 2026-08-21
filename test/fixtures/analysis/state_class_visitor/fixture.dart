@@ -36,7 +36,7 @@ class Bar extends StatefulWidget {
   State<Bar> createState() => _BarState();
 }
 
-// Non-State class that happens to have a setState method — must NOT be detected
+// Non-State class that happens to have a setState method. Must NOT be detected
 class NotAState {
   void setState(VoidCallback fn) => fn();
 }

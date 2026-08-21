@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 /// still resolves cleanly and still passes the scanned-file gate. Its row is
 /// emitted with a widget count short by one and a depth short by one, because
 /// the unresolved call is not recognised as a widget. Nothing about the row
-/// itself reveals that — which is what `unresolvedDependencies` is for.
+/// itself reveals that, which is what `unresolvedDependencies` is for.
 class MyCard extends StatelessWidget {
   const MyCard({super.key, required this.title});
 

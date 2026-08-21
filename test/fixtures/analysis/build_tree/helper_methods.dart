@@ -197,7 +197,7 @@ class _DeepHelperExampleState extends State<DeepHelperExample> {
 }
 
 // helperWidgetCount: 1, helperMaxWidgetNestingDepth: 1
-// (same helper called twice — body counted once via deduplication)
+// (same helper called twice, body counted once via deduplication)
 class RepeatedHelperCallExample extends StatefulWidget {
   const RepeatedHelperCallExample({super.key});
 

@@ -19,10 +19,10 @@ class Skeletonizer {
     'SvgPicture',
   };
 
-  /// [rewriter] contributes extra edits alongside the image replacements —
-  /// used by the transplant to re-insert casts that type promotion used to
-  /// supply. Edits from both sources are applied in a single right-to-left
-  /// pass so their offsets stay valid.
+  /// [rewriter] contributes extra edits alongside the image replacements. The
+  /// transplant uses it to re-insert casts that type promotion used to supply.
+  /// Edits from both sources are applied in a single right-to-left pass so
+  /// their offsets stay valid.
   static String skeletonize(
     AstNode node,
     ResolvedUnitResult result, {
@@ -93,6 +93,24 @@ class _ReplacementCollector extends RecursiveAstVisitor<void> {
       return;
     }
     super.visitMethodInvocation(node);
+  }
+
+  /// Rewrites the pre-Dart-3 default-value separator, `{int x: 5}` -> `{int x = 5}`.
+  ///
+  /// The transplant copies source text verbatim, so a repository old enough to
+  /// still use the colon form carries it into a file that is then analyzed by a
+  /// modern SDK, where it is `OBSOLETE_COLON_FOR_DEFAULT_VALUE` for a named
+  /// parameter and `WRONG_SEPARATOR_FOR_POSITIONAL_PARAMETER` for a positional
+  /// one. The parser recovers from both and still reports the separator token,
+  /// so the span is exact. `=` is valid in either position, which is why the
+  /// replacement needs no knowledge of which kind of parameter it sits on.
+  @override
+  void visitFormalParameterDefaultClause(FormalParameterDefaultClause node) {
+    final separator = node.separator;
+    if (separator.lexeme == ':') {
+      replacements.add(Replacement(separator.offset, separator.length, '='));
+    }
+    super.visitFormalParameterDefaultClause(node);
   }
 
   bool _isImage(AstNode node) {

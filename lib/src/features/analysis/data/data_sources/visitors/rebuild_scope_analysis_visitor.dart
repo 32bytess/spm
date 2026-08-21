@@ -10,7 +10,7 @@ import '../sets/rebuild_scope_instance_set.dart';
 /// Collects every rebuild scope in a compilation unit: `State` subclasses,
 /// consumer widgets, and the builder callbacks of state-management widgets.
 ///
-/// Scopes nest — a `BlocBuilder` callback inside a `State.build()` yields two
+/// Scopes nest. A `BlocBuilder` callback inside a `State.build()` yields two
 /// instances, and the enclosing scope's metrics include the callback. That is
 /// intentional: a parent rebuild does re-run the callback, while the callback
 /// scope measures the path the package can rebuild on its own.
@@ -79,7 +79,7 @@ class RebuildScopeAnalysisVisitor extends RecursiveAstVisitor<void> {
     super.visitInstanceCreationExpression(node);
   }
 
-  /// `State` ids stay `path:ClassName` — they are referenced by injected
+  /// `State` ids stay `path:ClassName`, because they are referenced by injected
   /// `instanceId` getters and by validation reports, so their hash must not
   /// change. Other scopes are disambiguated by type and occurrence.
   String _instanceId(String scopeType, String scopeName) {

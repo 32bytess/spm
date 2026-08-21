@@ -10,7 +10,7 @@
 /// That matters twice over:
 ///
 ///  * **Mining.** Selecting commits by "touched the scope's file" silently drops
-///    real edits, and drops them non-randomly — hardest in well-composed code,
+///    real edits, and drops them non-randomly, hardest in well-composed code,
 ///    where child trees are deepest.
 ///  * **Correctness.** A closure file that will not resolve makes the row wrong
 ///    rather than absent: an unreadable child contributes nothing and its whole

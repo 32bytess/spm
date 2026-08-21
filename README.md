@@ -23,20 +23,6 @@ without running or profiling the app. The binary result will indicate whether UI
 duration is stable or faster (`0`) or slower (`1`). This classifier is not available in the current
 release.
 
-## Metric compatibility
-
-The build-tree metrics changed in 0.3.0. Six extraction defects were fixed, among them helpers
-that return `List<Widget>`, const widgets written inside helper bodies, and list widgets other than
-`ListView` and `GridView`. Numbers from 0.2.0 and from 0.3.0 are not comparable, so re-run
-`analyze` over the whole project instead of mixing JSONL from both. [CHANGELOG.md](CHANGELOG.md)
-lists what each fix changed, and the wiki's
-[Extracted Features](https://github.com/32bytess/spm/wiki/Extracted-Features) page carries the
-current definition of every field.
-
-0.4.0 leaves those numbers alone. It appends three columns that report which files each row was
-computed from and whether all of them could be read, so 0.3.0 and 0.4.0 metrics can still be
-compared.
-
 ## Install
 
 Install the executable globally:

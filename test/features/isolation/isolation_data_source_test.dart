@@ -79,9 +79,28 @@ void main() {
     // Widget subclassing a custom base (not directly a Flutter widget) is detected
     expect(content, contains('class ExternalCard'));
 
-    // Non-widget / non-enum cross-file decls are excluded (declarations, not references)
-    expect(content, isNot(contains('const kExternalColor =')));
-    expect(content, isNot(contains('void externalHelper()')));
+    // The base it extends comes with it too. `_isUiClass` admits ExternalCard
+    // only because the *resolved* chain reaches StatelessWidget, so emitting the
+    // subclass without its base leaves `extends_non_class` behind and the class
+    // stops being a widget, which moves it out of widgetCount and into
+    // valueObjectAllocCount, and drops its whole build subtree.
+    expect(content, contains('class _BaseCard extends StatelessWidget'));
+
+    // A cross-file class that is not a widget but hands one out is inlined
+    // whole: `tree_extractor` walks the body of every widget-returning helper
+    // a scope calls, so a stand-in would report zero widgets where analyzing
+    // the original project counted the divider's subtree.
+    expect(content, contains('class ExternalStyles'));
+    expect(content, contains('ColoredBox(color: Colors.grey)'));
+
+    // Cross-file declarations that build no UI are declared but not inlined:
+    // enough for the file to resolve, never enough to change a count.
+    expect(content, contains('class ExternalService'));
+    expect(content, isNot(contains("'\$prefix-\$id'")));
+    expect(content, contains('void externalHelper() {}'));
+    expect(content, isNot(contains('External helper called')));
+    expect(content, contains('const dynamic kExternalColor = null;'));
+    expect(content, isNot(contains('kExternalColor = Colors.red')));
 
     // Should be a StatefulWidget
     expect(content, contains('class GeneratedWidget extends StatefulWidget'));
@@ -122,10 +141,10 @@ void main() {
 
       final content = builderIsolatedFile.readAsStringSync();
 
-      // Image.asset(...) should be replaced with the placeholder
+      // An `Image.asset` call should be replaced with the placeholder
       expect(content, contains("Image.asset('assets/placeholder.png')"));
 
-      // Placeholder() is Flutter core (not in image set) — kept as-is
+      // Placeholder() is Flutter core (not in image set), kept as-is
       expect(content, contains('const Placeholder()'));
     },
   );
@@ -198,7 +217,7 @@ void main() {
     });
 
     test('never copies a `context` field over State.context', () {
-      // CaptureDialog declares one and is inlined whole, which is fine — what
+      // CaptureDialog declares one and is inlined whole, which is fine. What
       // must not happen is that field being copied onto the generated State,
       // where it would shadow State.context.
       final state = content.substring(
@@ -206,6 +225,145 @@ void main() {
       );
       final stateBody = state.substring(0, state.indexOf('\n}'));
       expect(stateBody, isNot(contains('BuildContext context;')));
+    });
+  });
+
+  group('the transplant declares the seeds its own convention invents', () {
+    late String content;
+
+    setUp(() async {
+      await dataSource
+          .isolate(directories: [testProjectDir], outputDir: outputDir)
+          .drain();
+
+      content = Directory(p.join(outputDir, 'BlocBuilder'))
+          .listSync(recursive: false)
+          .whereType<File>()
+          .firstWhere((f) => f.path.contains('captures'))
+          .readAsStringSync();
+    });
+
+    test('declares every fixture the generated initState reads', () {
+      // `state = fixtureState;` is only half a convention while nothing
+      // declares fixtureState: the file carries an error-severity diagnostic,
+      // and `spm analyze` skips any file that does.
+      expect(content, contains('late CaptureState fixtureState;'));
+      expect(content, contains('late bool fixtureOnlyActive;'));
+      expect(content, contains('late String fixtureHeading;'));
+    });
+
+    test('declares the captured global as well as its seed', () {
+      // initState assigns to `captureTheme`, so the global itself has to
+      // exist. The dependency extractor dropped it for not being a widget.
+      expect(content, contains('late CaptureTheme captureTheme;'));
+      expect(content, contains('late CaptureTheme captureThemeValue;'));
+    });
+
+    test('leaves every seed unassigned', () {
+      // A fabricated default would be measured as though it were the value
+      // that was really there; an unset `late` throws on read instead.
+      expect(content, isNot(contains('fixtureState =')));
+      expect(content, isNot(contains('captureThemeValue =')));
+    });
+  });
+
+  group('a third-party dependency becomes a stand-in, not a dangling name', () {
+    late String content;
+
+    setUp(() async {
+      await dataSource
+          .isolate(directories: [testProjectDir], outputDir: outputDir)
+          .drain();
+
+      content = Directory(p.join(outputDir, 'State'))
+          .listSync(recursive: false)
+          .whereType<File>()
+          .firstWhere((f) => f.path.contains('ThirdPartyHostState'))
+          .readAsStringSync();
+    });
+
+    test('declares the type instead of importing its package', () {
+      expect(content, contains('class Vector3'));
+      expect(content, isNot(contains('package:vector_math')));
+    });
+
+    test('keeps the value object a value object', () {
+      // vector_math's Vector3 is never in the widget tree. Handing it a
+      // `Widget` supertype would invent widgets that were never built.
+      expect(content, isNot(contains('class Vector3 extends')));
+    });
+
+    test('carries only the members the scope reaches', () {
+      // Vector3 declares several hundred swizzle accessors. Emitting the
+      // declared surface rather than the referenced one produced a 400-line
+      // stand-in for a type this scope touches twice.
+      expect(content, contains('double get x'));
+      expect(content, contains('double get y'));
+      expect(content, isNot(contains('get zzzz')));
+      expect(content, isNot(contains('crossInto')));
+    });
+
+    test('never emits a private member of the package it stands in for', () {
+      // `_v3storage` is private to vector_math's own library; a stand-in in
+      // another library could never have been reached through it.
+      expect(content, isNot(contains('_v3storage')));
+    });
+  });
+
+  group("the scope's own constructor never lands in the generated State", () {
+    late Map<String, String> isolated;
+
+    setUp(() async {
+      await dataSource
+          .isolate(directories: [testProjectDir], outputDir: outputDir)
+          .drain();
+
+      String read(String scopeDir, String needle) =>
+          Directory(p.join(outputDir, scopeDir))
+              .listSync()
+              .whereType<File>()
+              .firstWhere((f) => f.path.contains(needle))
+              .readAsStringSync();
+
+      isolated = {
+        'fieldFormal': read('State', 'CtorStatefulState'),
+        'initialiserList': read('State', 'CtorInitListState'),
+        'nonState': read('ConsumerWidget', 'CtorConsumer'),
+      };
+    });
+
+    // A constructor copied verbatim keeps the name of the class it came from.
+    // Inside `_GeneratedWidgetState` that name no longer matches, so Dart reads
+    // it as a bodiless method. That one cause is what produces
+    // CONCRETE_CLASS_WITH_ABSTRACT_MEMBER, INVALID_CONSTRUCTOR_NAME,
+    // CONST_METHOD and INVALID_SUPER_FORMAL_PARAMETER_LOCATION, which look
+    // like four unrelated problems until you find the constructor.
+    test('drops a State constructor with a field formal parameter', () {
+      expect(isolated['fieldFormal'], isNot(contains('CtorStatefulState(')));
+    });
+
+    test('drops a State constructor with an initialiser list', () {
+      expect(
+        isolated['initialiserList'],
+        isNot(contains('CtorInitListState(')),
+      );
+    });
+
+    test("drops a non-State scope's own constructor", () {
+      // The ConsumerWidget majority: 40 of 41 such groups carried this.
+      expect(isolated['nonState'], isNot(contains('const CtorConsumer(')));
+    });
+
+    test('marks fields the dropped constructor used to initialise as late', () {
+      // Dropping the constructor silently would leave these unassigned, which
+      // is a different error rather than a fix.
+      expect(isolated['fieldFormal'], contains('late final String _seed;'));
+      expect(isolated['initialiserList'], contains('late final int _doubled;'));
+    });
+
+    test('leaves fields the constructor did not initialise alone', () {
+      expect(isolated['fieldFormal'], contains('int _hits = 0;'));
+      expect(isolated['fieldFormal'], isNot(contains('late int _hits')));
     });
   });
 }

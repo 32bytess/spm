@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-// Direct State subclass — must be detected
+// Direct State subclass. Must be detected
 class _DirectState extends State<DirectWidget> {
   @override
   Widget build(BuildContext context) => const SizedBox();
@@ -11,7 +11,7 @@ class DirectWidget extends StatefulWidget {
   State<DirectWidget> createState() => _DirectState();
 }
 
-// Indirect subclass via abstract base — both base and leaf must be detected
+// Indirect subclass via an abstract base. Both base and leaf must be detected
 abstract class BaseState<T extends StatefulWidget> extends State<T> {}
 
 class _IndirectState extends BaseState<IndirectWidget> {
@@ -24,5 +24,5 @@ class IndirectWidget extends StatefulWidget {
   State<IndirectWidget> createState() => _IndirectState();
 }
 
-// Plain class — must NOT be detected
+// Plain class. Must NOT be detected
 class PlainClass {}

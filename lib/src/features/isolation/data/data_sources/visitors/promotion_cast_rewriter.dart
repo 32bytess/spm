@@ -5,9 +5,9 @@ import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonize
 /// Restores casts that type promotion used to make unnecessary.
 ///
 /// Inside its original method a builder parameter is promotable, so
-/// `if (state is WalletLoaded) … state.wallets` resolves. The transplant lifts
+/// `if (state is WalletLoaded) { state.wallets }` resolves. The transplant lifts
 /// that parameter to a `late WalletState state;` field, and Dart does not
-/// promote fields — every promoted use stops compiling.
+/// promote fields, so every promoted use stops compiling.
 ///
 /// This rewriter finds references to lifted names whose promoted static type is
 /// a proper subtype of the field's declared type and wraps them:
@@ -32,7 +32,7 @@ class PromotionCastRewriter extends SourceRewriter {
     final declared = declaredTypes[node.name];
     if (declared == null) return;
 
-    // Only a reference to the lifted binding itself matters — `foo.state` is
+    // Only a reference to the lifted binding itself matters. `foo.state` is
     // somebody else's member.
     final parent = node.parent;
     if (parent is PropertyAccess && identical(parent.propertyName, node)) {

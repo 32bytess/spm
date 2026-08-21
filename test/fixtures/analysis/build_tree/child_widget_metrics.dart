@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class _DeepConstChild extends StatelessWidget {
   const _DeepConstChild();
 
-  // helper in child class — its const Icon IS counted in helperWidgetCount
+  // helper in child class. Its const Icon IS counted in helperWidgetCount
   // (helper bodies of recursed child widgets are analyzed; const included)
   Widget _buildHelper() => const Icon(Icons.star);
 
@@ -30,7 +30,7 @@ class ChildWidgetNoRootConstExample extends StatefulWidget {
 
 class _ChildWidgetNoRootConstExampleState
     extends State<ChildWidgetNoRootConstExample> {
-  // helper in root state class — its const Placeholder is NOT counted in treeConstWidgetCount
+  // helper in root state class. Its const Placeholder is NOT counted in treeConstWidgetCount
   Widget _buildRootHelper() => const Placeholder();
 
   @override
@@ -55,7 +55,7 @@ class ChildWidgetWithRootConstExample extends StatefulWidget {
 
 class _ChildWidgetWithRootConstExampleState
     extends State<ChildWidgetWithRootConstExample> {
-  // helper in root state class — its const Placeholder is NOT counted in treeConstWidgetCount
+  // helper in root state class. Its const Placeholder is NOT counted in treeConstWidgetCount
   Widget _buildRootHelper() => const Placeholder();
 
   @override

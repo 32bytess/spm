@@ -5,7 +5,7 @@ import 'package:analyzer/dart/ast/visitor.dart';
 /// `Text`/`SelectableText`/`Tooltip` strings, `Icons.*` references, and
 /// asset paths. Base and mutation must agree on all of them (check 3).
 class RenderedLeafVisitor extends RecursiveAstVisitor<void> {
-  /// Multiset — a duplicated or removed label must be detected even when
+  /// A multiset, because a duplicated or removed label must be detected when
   /// the distinct string set is unchanged.
   final List<String> texts = [];
   final Set<String> icons = {};

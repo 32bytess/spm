@@ -3,7 +3,7 @@ integration test for the two literature-backed features added 2026-07-20:
  - iterationWidgetCount: non-const widgets built per element (loop bodies,
    collection-op callbacks, lazy-list builders) across build + helper bodies;
  - valueObjectAllocCount: non-const value-object allocations (EdgeInsets,
-   TextStyle, ...) paid on every rebuild; const value objects excluded.
+   TextStyle) paid on every rebuild; const value objects excluded.
 */
 import 'package:spm/src/features/analysis/domain/entities/analysis_result_entity.dart';
 import 'package:test/test.dart';
@@ -102,7 +102,7 @@ void main() {
           equals(3),
           reason:
               'EdgeInsets.all + EdgeInsets.symmetric + TextStyle, all '
-              'non-const — previously this signal was discarded entirely',
+              'non-const, a signal that used to be discarded entirely',
         );
       },
     );
