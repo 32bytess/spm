@@ -106,6 +106,63 @@ void main() {
     expect(content, contains('class GeneratedWidget extends StatefulWidget'));
   });
 
+  test('every isolated fixture analyses clean', () async {
+    // The property the whole feature exists for: `spm analyze` skips any file
+    // carrying an error-severity diagnostic, so a scope that was written but
+    // does not analyse contributes nothing to whatever it was extracted for.
+    final events = await dataSource
+        .isolate(directories: [testProjectDir], outputDir: outputDir)
+        .toList();
+    final summary = events.last as IsolationSummaryEvent;
+
+    expect(summary.verifiedCount, summary.isolatedCount);
+    expect(
+      summary.cleanCount,
+      summary.verifiedCount,
+      reason: '${summary.errorCount} errors across the isolated files',
+    );
+  });
+
+  test('keeps the prefix an import was written with', () async {
+    // The body is copied verbatim, so `math.pi` only resolves if `as math`
+    // survives into the regenerated import list. It did not: the visitor sees
+    // the two halves of a prefixed reference as unrelated identifiers, and the
+    // URI-only fallback rendered a prefixless directive.
+    final stream = dataSource.isolate(
+      directories: [testProjectDir],
+      outputDir: outputDir,
+    );
+    await stream.drain();
+
+    final file = Directory(p.join(outputDir, 'State'))
+        .listSync()
+        .whereType<File>()
+        .firstWhere((f) => f.path.contains('PrefixedImportsWidget'));
+    final content = file.readAsStringSync();
+
+    expect(content, contains("import 'dart:math' as math;"));
+    expect(content, contains('math.pi'));
+    expect(content, contains('math.Random()'));
+  });
+
+  test('keeps the show clause an import was written with', () async {
+    final stream = dataSource.isolate(
+      directories: [testProjectDir],
+      outputDir: outputDir,
+    );
+    await stream.drain();
+
+    final file = Directory(p.join(outputDir, 'State'))
+        .listSync()
+        .whereType<File>()
+        .firstWhere((f) => f.path.contains('PrefixedImportsWidget'));
+
+    expect(
+      file.readAsStringSync(),
+      contains("import 'dart:convert' show jsonEncode;"),
+    );
+  });
+
   test('should include external SDK and package imports', () async {
     final stream = dataSource.isolate(
       directories: [testProjectDir],

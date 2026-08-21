@@ -265,20 +265,76 @@ ${bodies.join('\n\n')}
     return '$header {\n${members.join('\n')}\n}';
   }
 
+  /// The most members a type may declare and still have its whole surface
+  /// rendered.
+  ///
+  /// Referenced-only was too little and everything was too much. A stub built
+  /// from references alone carries whichever members the traversal happened to
+  /// reach, so `removeListener` lands and `addListener` does not, and the file
+  /// fails at the one call site the shim forgot. Rendering everything is what
+  /// the referenced-only rule was written to avoid: `vector_math`'s `Vector3`
+  /// runs past four hundred lines. A small type costs little to render whole,
+  /// so the cutoff buys completeness where completeness is cheap and keeps the
+  /// reference set where it is not.
+  static const int _fullSurfaceLimit = 40;
+
+  /// Members that come as a set, so a shim carrying one has to carry them all.
+  ///
+  /// `initState` adds a listener and `dispose` removes it. Reaching only one of
+  /// the two is the recurring shape, and both are inherited from
+  /// `ChangeNotifier` often enough that neither is declared on the type being
+  /// stood in for.
+  static const Set<String> _pairedMembers = {
+    'addListener',
+    'removeListener',
+    'dispose',
+  };
+
+  /// Whether [owner]'s whole declared surface is rendered.
+  bool _rendersFullSurface(InstanceElement owner, String name) {
+    if (_allMembers.contains(name)) return true;
+    return owner.fields.length + owner.methods.length <= _fullSurfaceLimit;
+  }
+
   /// The constructors to emit for [owner].
   ///
-  /// Only the ones a reference actually reached, so a value object with eight
-  /// named constructors contributes the one that was called. A type used only
-  /// as an annotation reaches none, and the implicit default constructor the
-  /// shim gets is enough.
+  /// Every constructor for a type whose whole surface is rendered, and
+  /// otherwise only the ones a reference actually reached, so a value object
+  /// with eight named constructors contributes the one that was called. A type
+  /// used only as an annotation reaches none, and the implicit default
+  /// constructor the shim gets is enough.
   List<ConstructorElement> _constructorsFor(
     InterfaceElement owner,
     String name,
   ) {
+    if (_rendersFullSurface(owner, name)) return owner.constructors;
     final requested = _members[name];
-    if (_allMembers.contains(name)) return owner.constructors;
     if (requested == null) return const [];
     return requested.values.whereType<ConstructorElement>().toList();
+  }
+
+  /// The members named in [_pairedMembers] that [owner] has, declared or
+  /// inherited.
+  ///
+  /// Walked over the supertypes as well as the declaration, since a controller
+  /// that extends `ChangeNotifier` declares none of them itself.
+  List<ExecutableElement> _pairedMembersOf(InstanceElement owner) {
+    final found = <String, ExecutableElement>{};
+    void scan(Iterable<ExecutableElement> members) {
+      for (final member in members) {
+        final name = member.name;
+        if (name == null || !_pairedMembers.contains(name)) continue;
+        found.putIfAbsent(name, () => member);
+      }
+    }
+
+    scan(owner.methods);
+    if (owner is InterfaceElement) {
+      for (final supertype in owner.allSupertypes) {
+        scan(supertype.element.methods);
+      }
+    }
+    return found.values.toList();
   }
 
   /// Renders the members of [owner], honouring the referenced-only rule.
@@ -294,6 +350,12 @@ ${bodies.join('\n\n')}
     Set<String> skip = const {},
   }) {
     final out = <String>[];
+    // Two sources can name one member: the declared surface and the recorded
+    // references, which may hold the inherited element of the same name. The
+    // second spelling would be a duplicate declaration, so keys are tracked as
+    // they are emitted. A field claims both its getter and its setter key,
+    // since it renders as the pair.
+    final emitted = <String>{};
 
     void renderOne(Element member) {
       final memberName = member.name;
@@ -306,9 +368,12 @@ ${bodies.join('\n\n')}
       }
       if (member is ConstructorElement) return;
       if (member is FieldElement) {
+        if (!emitted.add(memberName)) return;
+        emitted.add('$memberName=');
         out.addAll(_renderField(member, available, typeParams));
         return;
       }
+      if (!emitted.add(_memberKey(member) ?? memberName)) return;
       if (member is GetterElement) {
         final type = _renderType(member.returnType, available, typeParams);
         final prefix = member.isStatic ? '  static ' : '  ';
@@ -338,16 +403,21 @@ ${bodies.join('\n\n')}
       }
     }
 
-    if (_allMembers.contains(name)) {
+    if (_rendersFullSurface(owner, name)) {
       for (final field in owner.fields) {
         renderOne(field);
       }
       for (final method in owner.methods) {
         renderOne(method);
       }
-      return out;
+    } else {
+      for (final member in _pairedMembersOf(owner)) {
+        renderOne(member);
+      }
     }
 
+    // Recorded references last: an inherited member lands on the shim that
+    // needs it, and anything the surface already declared is skipped above.
     for (final member in (_members[name] ?? const <String, Element>{}).values) {
       renderOne(member);
     }

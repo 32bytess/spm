@@ -1,5 +1,61 @@
 # Changelog
 
+## 0.5.2
+
+`isolate` now analyses what it wrote before it reports success, so every run says how many of its
+files a later `spm analyze` can actually read. The fixes below all change what `isolate` writes.
+Files produced by 0.5.1 and earlier carry imports of packages that were never meant to be there and
+references to names nothing declares, so they cannot be mixed into one dataset with 0.5.2 output.
+
+### Fixed
+
+- The gate that decides which libraries an isolated file may import tested `package:flutter` without
+  the trailing slash, so every pub package whose name begins with `flutter` passed as an SDK
+  library. `flutter_bloc`, `flutter_riverpod`, `flutter_secure_storage`, `flutter_localizations`,
+  `flutter_scale_kit` and `fluttertoast` were among them: each was imported back into the isolated
+  file instead of being stood in for, leaving output that only resolves inside the project it came
+  from. Sizing extensions such as `.sp` and `.w` were the visible half of this, since the import
+  that was supposed to define them does not exist where the file is read.
+- Import prefixes were dropped. A scope whose source read `import 'dart:math' as math;` was written
+  out with a plain `import 'dart:math';`, so every `math.pi` and `math.Random()` in the transplanted
+  body became an undefined name. Prefixes, `show` clauses and `hide` clauses now travel with the
+  import, including prefixes from the other files a transplant copied code from. A `deferred` import
+  is deliberately not copied: the generated `build` never calls `loadLibrary()`.
+- The branch that matched a reference back to the import directive it came through read the
+  directive's element under two names the current analyzer does not expose, so it threw and was
+  skipped for every import. Every import fell to a fallback that rebuilds the directive from the
+  library's URI alone, which is where the prefixes and combinators were being lost.
+- A declaration written in a `part` file was reported against the file that defines the library, so
+  the same-file lookup searched a unit that does not declare it, found nothing, and marked the name
+  handled on the way out. Private widgets declared in a part were left undefined, which does not
+  merely fail to compile: `analyze` skips the subtree of a child widget it cannot reach, so the row
+  is wrong rather than absent.
+- A same-file lookup that found nothing, and a cross-file reference whose file did not resolve, both
+  used to leave the name dangling. Each now falls back to a declaration-only stand-in.
+- A stand-in carried only the members the crawl happened to reach, so a controller could arrive with
+  `removeListener` and without `addListener`. Members are now recorded against the type the code
+  names rather than the type that declares them, which is what was losing every member inherited
+  from a Flutter base class such as `ChangeNotifier`, and a type that declares 40 members or fewer
+  comes across whole.
+
+### Added
+
+- References the analyzer resolves to nothing now get stand-ins rebuilt from the call sites. Two
+  situations produce them: an extension defined in a package the isolated file may not import, which
+  is what `context.read<T>()`, `context.watch<T>()` and `context.select<T, R>()` are, and a source
+  project whose own `pub get` never succeeded, where no third-party name resolves at all. An
+  unresolved constructor call in a widget position is stood in for by a widget, so the allocation is
+  still counted as one.
+- `isolate` analyses the files it wrote, in the same process, before reporting. Imports nothing uses
+  are removed, and each mapping row gains `verified`, `errorCount`, `warningCount`, `topCodes`,
+  `unresolvedImports` and `unresolvedNames`. The run prints how many files analyse clean, which is
+  the number that decides how much of the output `analyze` can read.
+- A row carries `sourceDependenciesResolved: false` when the project it came from had no resolvable
+  dependencies, so a corpus can exclude or re-mine those revisions instead of treating their metrics
+  as comparable. The condition is logged as an error when it happens rather than passing silently.
+- The output directory gets a `pubspec.yaml` and a `.dart_tool/package_config.json` borrowed from
+  the source project, so the isolated files resolve `package:flutter` where they now sit.
+
 ## 0.5.1
 
 ### Fixed

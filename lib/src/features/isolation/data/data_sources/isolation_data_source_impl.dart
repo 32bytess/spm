@@ -7,15 +7,25 @@ import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:path/path.dart' as p;
 import 'package:spm/src/features/isolation/data/data_sources/extractors/transplant_extractor.dart';
 import 'package:spm/src/features/isolation/data/data_sources/isolation_data_source.dart';
+import 'package:spm/src/features/isolation/data/data_sources/verifier/output_verifier.dart';
 import 'package:spm/src/features/isolation/data/data_sources/visitors/rebuild_scope_visitor.dart';
 import 'package:spm/src/features/isolation/domain/entities/isolation_event.dart';
+import 'package:spm/src/core/loggor/logger.dart';
 
 /// Implementation of [IsolationDataSource] using the `analyzer` package.
 class IsolationDataSourceImpl implements IsolationDataSource {
   final TransplantExtractor _extractor;
+  final OutputVerifier _verifier;
 
-  IsolationDataSourceImpl({TransplantExtractor? extractor})
-    : _extractor = extractor ?? TransplantExtractor();
+  IsolationDataSourceImpl({
+    TransplantExtractor? extractor,
+    OutputVerifier? verifier,
+  }) : _extractor = extractor ?? TransplantExtractor(),
+       _verifier = verifier ?? OutputVerifier();
+
+  /// Projects whose dependencies could not be resolved, so every third-party
+  /// name in them is unresolved and every row produced from them is suspect.
+  final Set<String> _degradedProjects = {};
 
   /// Formats every isolated file so the output is diffable.
   ///
@@ -58,6 +68,20 @@ class IsolationDataSourceImpl implements IsolationDataSource {
         if (result.exitCode == 0) return;
       } catch (_) {}
     }
+
+    // Nothing below this line resolves a third-party package. The synthesised
+    // config maps the project's own `package:` URI and no other, so every
+    // reference into a dependency has a null element from here on: no import,
+    // no stand-in from the element model, and only what the syntactic
+    // reconstruction can recover. A run in this state is reportable, not
+    // merely slower, so it is recorded rather than logged and forgotten.
+    _degradedProjects.add(dir);
+    SpmLogger.logMessage(
+      'Could not resolve dependencies for $dir. Every third-party reference '
+      'in it is unresolved, so its isolated files are reconstructed from '
+      'syntax alone.',
+      isError: true,
+    );
 
     // Fallback: synthesise a minimal package_config.json so that the package's
     // own `package:<name>/...` imports resolve to its `lib/` directory. This
@@ -167,6 +191,10 @@ class IsolationDataSourceImpl implements IsolationDataSource {
               'nodeType': match.type,
               'isolatedPath': targetPath,
               'name': match.name,
+              if (_degradedProjects.any(
+                (project) => p.isWithin(project, filePath),
+              ))
+                'sourceDependenciesResolved': false,
             });
             isolatedCount++;
           }
@@ -174,18 +202,43 @@ class IsolationDataSourceImpl implements IsolationDataSource {
       }
     }
 
+    // Formatting first: the verifier reads the files back, and its unused
+    // import pruning is line-based, which assumes the formatter has already
+    // put one directive on each line.
+    await _formatOutput(outputDir);
+
+    final verifications = await _verifier.verify(
+      outputDir: outputDir,
+      sourceDirectories: directories,
+    );
+
+    var verifiedCount = 0;
+    var cleanCount = 0;
+    var errorCount = 0;
+    for (final verification in verifications.values) {
+      if (!verification.wasVerified) continue;
+      verifiedCount++;
+      errorCount += verification.errorCount;
+      if (verification.isClean) cleanCount++;
+    }
+
     // Save the mapping to a JSONL file if requested
     if (jsonlPath != null) {
+      for (final row in mapping) {
+        final verification = verifications[row['isolatedPath']];
+        if (verification != null) row.addAll(verification.toJson());
+      }
       File(
         jsonlPath,
       ).writeAsStringSync(mapping.map((m) => jsonEncode(m)).join('\n'));
     }
 
-    await _formatOutput(outputDir);
-
     yield IsolationSummaryEvent(
       isolatedCount: isolatedCount,
       outputDir: outputDir,
+      verifiedCount: verifiedCount,
+      cleanCount: cleanCount,
+      errorCount: errorCount,
     );
   }
 }

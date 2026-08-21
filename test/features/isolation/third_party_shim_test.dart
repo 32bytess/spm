@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 import 'package:spm/src/features/isolation/data/data_sources/isolation_data_source_impl.dart';
+import 'package:spm/src/features/isolation/domain/entities/isolation_event.dart';
 import 'package:test/test.dart';
 
 import 'utils/temp_project.dart';
@@ -32,6 +33,13 @@ class ThirdPartyWidgetHost extends StatefulWidget {
 
 class ThirdPartyWidgetHostState extends State<ThirdPartyWidgetHost> {
   static const FancySpec _spec = FancySpec(weight: 2);
+  final FancyController _controller = FancyController();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.tap();
+  }
 
   @override
   Widget build(BuildContext context) => Column(
@@ -44,6 +52,7 @@ void main() {
   late TempProject project;
   late String outputDir;
   late String isolated;
+  late IsolationSummaryEvent summary;
 
   setUpAll(() async {
     final fixtures = p.absolute('test/fixtures/isolation_third_party');
@@ -54,9 +63,10 @@ void main() {
     );
     outputDir = Directory.systemTemp.createTempSync('spm_third_party_out').path;
 
-    await IsolationDataSourceImpl()
+    final events = await IsolationDataSourceImpl()
         .isolate(directories: [project.path], outputDir: outputDir)
-        .drain();
+        .toList();
+    summary = events.last as IsolationSummaryEvent;
 
     isolated = Directory(p.join(outputDir, 'State'))
         .listSync(recursive: false)
@@ -111,8 +121,44 @@ void main() {
     expect(isolated, isNot(contains('Text(label)')));
   });
 
-  test('shimmed members are limited to the ones the scope reaches', () {
+  test('a small type comes across whole', () {
+    // Referenced-only was the rule, and it produced stubs that carried
+    // `removeListener` and not `addListener`, since the member set was decided
+    // by whichever call sites the traversal reached. For a type this size,
+    // rendering the declared surface costs a line and removes the whole class
+    // of failure.
     expect(isolated, contains('int get weight'));
-    expect(isolated, isNot(contains('String get label')));
+    expect(isolated, contains('String get label'));
+  });
+
+  test('a large type still carries only what the scope reaches', () {
+    // The case the referenced-only rule was written for: rendering everything
+    // turns a type the scope touches once into hundreds of lines.
+    expect(isolated, contains('class FancyController'));
+    expect(isolated, isNot(contains('void pad0()')));
+  });
+
+  test('an inherited member lands on the type the code names', () {
+    // `tap` is declared on `FancyBase`, so keying it to its declaring class put
+    // it on the wrong stand-in and left `_controller.tap()` undefined against
+    // `FancyController`. The member is recorded from the receiver instead.
+    expect(isolated, contains('void tap()'));
+    expect(
+      RegExp(r'class FancyController \{[^}]*void tap\(\)').hasMatch(isolated),
+      isTrue,
+      reason: 'tap must be declared on FancyController, not only on FancyBase',
+    );
+  });
+
+  test('every isolated file analyses clean', () {
+    // The property the whole feature exists for: `spm analyze` skips any file
+    // carrying an error-severity diagnostic, so a scope that was written but
+    // does not analyse contributes nothing.
+    expect(summary.verifiedCount, greaterThan(0));
+    expect(
+      summary.cleanCount,
+      summary.verifiedCount,
+      reason: '${summary.errorCount} errors across the isolated files',
+    );
   });
 }

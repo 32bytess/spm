@@ -4,8 +4,11 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:spm/src/core/errors/exceptions.dart';
 import 'package:spm/src/features/analysis/data/data_sources/extensions/state_class_detector.dart';
+import 'package:spm/src/features/isolation/data/data_sources/emitters/import_collector.dart';
 import 'package:spm/src/features/isolation/data/data_sources/emitters/shim_emitter.dart';
+import 'package:spm/src/features/isolation/data/data_sources/emitters/synthetic_shim_emitter.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/declaration_names.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonizer.dart';
 import 'package:spm/src/features/isolation/data/data_sources/sets/isolation_match_set.dart';
 import 'package:spm/src/features/isolation/data/data_sources/visitors/captured_variable_visitor.dart';
@@ -81,21 +84,28 @@ class TransplantExtractor {
     final processedKeys = <String>{};
     processedKeys.add('${result.path}::${match.name}');
 
-    final externalImports = <String>{"import 'package:flutter/material.dart';"};
+    final imports = ImportCollector()..add('package:flutter/material.dart');
+
+    // Every unit the transplant copied source text out of. The prefix rescan
+    // below reads their directives, since inlined code carries the prefixes of
+    // the file it came from and nothing else records them.
+    final visitedUnits = <CompilationUnit>{result.unit};
 
     // Names the isolated file declares by inlining, shared across the whole
     // recursion. The shim emitter reads it at render time, so a name inlined
     // late still wins over a shim requested early.
     final emittedNames = <String>{};
     final shims = ShimEmitter(emittedNames);
+    final synthetics = SyntheticShimEmitter(emittedNames);
 
     final extractor = DependencyExtractorVisitor(
       result,
       enclosingClass,
       processedKeys,
-      externalImports,
+      imports,
       session: session,
       shims: shims,
+      synthetics: synthetics,
       emittedNames: emittedNames,
     );
 
@@ -314,16 +324,25 @@ class TransplantExtractor {
         .join('\n');
 
     // Recursively resolve cross-file references found by the visitor
-    final pending = List<({String filePath, String name})>.from(
-      extractor.crossFileRefs,
-    );
+    final pending =
+        List<({String filePath, String name, Element element})>.from(
+          extractor.crossFileRefs,
+        );
 
     while (pending.isNotEmpty) {
       final ref = pending.removeAt(0);
 
       final unitResult = await session.getResolvedUnit(ref.filePath);
-      if (unitResult is! ResolvedUnitResult) continue;
+      if (unitResult is! ResolvedUnitResult) {
+        // The file did not resolve, so nothing can be read out of it. Standing
+        // the name in keeps the reference from dangling, which is the whole
+        // difference between a smaller row and a wrong one.
+        shims.request(ref.element, allMembers: true);
+        continue;
+      }
+      visitedUnits.add(unitResult.unit);
 
+      bool matched = false;
       for (final decl in unitResult.unit.declarations) {
         if (declaredNames(decl).contains(ref.name)) {
           // A declaration is inlined whole when it can contribute to the
@@ -373,9 +392,10 @@ class TransplantExtractor {
               unitResult,
               widgetDecl,
               processedKeys,
-              externalImports,
+              imports,
               session: session,
               shims: shims,
+              synthetics: synthetics,
               emittedNames: emittedNames,
             );
             decl.accept(sub);
@@ -409,37 +429,44 @@ class TransplantExtractor {
             // declaration nor any member of it produces a widget.
             _requestShims(decl, shims);
           }
+          matched = true;
           break;
         }
       }
+
+      // No declaration in the resolved unit carries the name. A `part` file is
+      // the usual reason: the reference resolves to the library, and the
+      // declaration lives in a unit the loop never opened.
+      if (!matched) shims.request(ref.element, allMembers: true);
     }
 
     final fullClassCode = extractor.classCode;
 
     // Scan all collected code for `prefix.` patterns so that imports with an
     // `as X` alias are included even when the package wasn't resolved by the
-    // analyzer (unresolved imports give a null element, bypassing normal detection).
+    // analyzer (unresolved imports give a null element, bypassing normal
+    // detection).
+    //
+    // Every unit the transplant copied code from is scanned, not only the
+    // origin. A declaration inlined from another file keeps that file's
+    // prefixes, and its directives live nowhere else.
     final allCode =
         buildBody +
         extractor.memberCode +
         fullClassCode +
         paramFields +
         widgetFields;
-    for (final directive in result.unit.directives) {
-      if (directive is! ImportDirective) continue;
-      final prefix = (directive as dynamic).prefix?.name as String?;
-      if (prefix == null || !allCode.contains('$prefix.')) continue;
-      // Apply the same flutter/dart-only filter used in the visitor:
-      // prefix-aliased imports from third-party packages are excluded.
-      final uriValue =
-          (directive as dynamic).uri?.stringValue as String? ??
-          directive.toSource();
-      final isFlutterOrDart =
-          uriValue.startsWith('package:flutter') ||
-          uriValue.startsWith('dart:');
-      if (!isFlutterOrDart) continue;
-      final src = directive.toSource();
-      externalImports.add(src.endsWith(';') ? src : '$src;');
+    for (final unit in visitedUnits) {
+      for (final directive in unit.directives) {
+        if (directive is! ImportDirective) continue;
+        final prefix = directive.prefix?.name;
+        if (prefix == null || !allCode.contains('$prefix.')) continue;
+        // Apply the same SDK-only filter used in the visitor: prefix-aliased
+        // imports from third-party packages are excluded.
+        final uriValue = directive.uri.stringValue;
+        if (uriValue == null || !isSdkLibrary(uriValue)) continue;
+        imports.addDirective(directive);
+      }
     }
 
     final initState = _buildInitState(
@@ -457,9 +484,15 @@ class TransplantExtractor {
     );
     final shimDeclarations = shims.render();
 
+    // Synthesised last, so anything the file already declares by inlining, by
+    // seeding or by shimming wins over a stand-in rebuilt from syntax.
+    final syntheticDeclarations = synthetics.render(
+      reserved: shims.shimmedNames,
+    );
+
     // Generate the final self-contained file
     return '''
-${externalImports.join('\n')}
+${imports.render()}
 
 class GeneratedWidget extends StatefulWidget {
 $widgetFields
@@ -481,7 +514,7 @@ $buildBody
 }
 
 $fullClassCode
-$seedDeclarations$shimDeclarations''';
+$seedDeclarations$shimDeclarations$syntheticDeclarations''';
   }
 
   /// Declares the symbols the transplant's own seeding convention invents.
