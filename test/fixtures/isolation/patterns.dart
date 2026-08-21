@@ -29,12 +29,12 @@ class _MyStatefulState extends State<MyStateful> {
         ...buildExternalItems(context),
         CustomPaint(painter: ExternalPainter()),
         DecoratedBox(decoration: buildExternalDecoration()),
-        Container(
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            border: ExternalShape(),
-          ),
-        ),
+        // ShapeDecoration, not BoxDecoration: `border:` wants a BoxBorder, and
+        // a ShapeBorder there is a type error the fixture used to carry and the
+        // transplant faithfully copied across.
+        Container(decoration: const ShapeDecoration(shape: ExternalShape())),
+        ExternalStyles.divider(),
+        Text(ExternalService().label(_counter)),
         ElevatedButton(onPressed: _increment, child: const Text('Add')),
       ],
     );

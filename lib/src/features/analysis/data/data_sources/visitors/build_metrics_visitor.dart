@@ -23,9 +23,9 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   /// The per-element cost multiplier of a rebuild.
   int iterationWidgetCount = 0;
 
-  /// Non-const, non-widget instance creations (`EdgeInsets`, `TextStyle`,
-  /// `BoxDecoration`, ...): allocation/GC pressure paid on every rebuild.
-  /// `const` value objects are canonicalized and excluded.
+  /// Non-const, non-widget instance creations such as `EdgeInsets`,
+  /// `TextStyle` and `BoxDecoration`: the allocation and GC pressure paid on
+  /// every rebuild. `const` value objects are canonicalized and excluded.
   int valueObjectAllocCount = 0;
 
   /// Most expensive list-rendering strategy seen in this body:
@@ -86,15 +86,15 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
 
   @override
   void visitInstanceCreationExpression(InstanceCreationExpression node) {
-    // Value objects (EdgeInsets, TextStyle, BorderRadius, ...) are not widgets:
-    // they carry no per-rebuild widget cost, so they are neither counted nor
-    // added to the nesting depth. Still descend into their arguments so any
-    // widget nested inside a value-object argument is discovered.
+    // Value objects such as EdgeInsets, TextStyle and BorderRadius are not
+    // widgets: they carry no per-rebuild widget cost, so they are neither
+    // counted nor added to the nesting depth. Still descend into their
+    // arguments so any widget nested inside one is discovered.
     if (!_isWidgetType(node.staticType)) {
       if (!node.isConst) valueObjectAllocCount++;
       // `List.generate(n, f)` / `Iterable.generate(n, f)` invoke `f` once per
       // element. They are factory constructors, not method invocations, so the
-      // `generate` case in [visitMethodInvocation] never sees them — without
+      // `generate` case in [visitMethodInvocation] never sees them. Without
       // this, an O(N) widget factory reads as a single allocation.
       if (_isGenerateCtor(node)) {
         treeIterationCount++;
@@ -231,7 +231,7 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
 
   @override
   void visitFunctionExpression(FunctionExpression node) {
-    // Fires for closures and local functions only — a method's own body is
+    // Fires for closures and local functions only. A method's own body is
     // not a FunctionExpression. Used to keep closure returns from being
     // mistaken for the build body's root return.
     _functionDepth++;
@@ -274,7 +274,7 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
 
   @override
   void visitReturnStatement(ReturnStatement node) {
-    // Guards: only the body's own root return counts — not a return inside a
+    // Guards: only the body's own root return counts, not a return inside a
     // closure (_functionDepth) or nested in widget arguments (_currentDepth).
     if (_functionDepth > 0) {
       super.visitReturnStatement(node);
@@ -353,10 +353,10 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   /// 2 (eager): a scroll list fed a concrete `children:` (all children built
   /// every rebuild, no viewport culling), a sliver list fed a
   /// `SliverChildListDelegate` (same thing, one indirection down), or a
-  /// `Column`/`Row`/`Wrap`/`Flex` whose `children:` is runtime-length — a
+  /// `Column`/`Row`/`Wrap`/`Flex` whose `children:` is runtime-length: a
   /// spread / `for`-element inside the literal, or any non-literal expression
   /// (`items`, `items.map(...).toList()`, `List.generate(...)`, a helper
-  /// call, ...). A fixed-arity literal (`[A, B, if (c) C]`) stays 0: its cost
+  /// call). A fixed-arity literal (`[A, B, if (c) C]`) stays 0: its cost
   /// is constant and already captured by the widget instance count.
   static int _classifyListStrategy(
     InstanceCreationExpression node,
@@ -410,8 +410,8 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   }
 
   /// Whether a `children:` expression produces a runtime-length widget list.
-  /// Shape-based on purpose: enumerating iteration ops (`map`, `where`, ...)
-  /// cannot cover bare list variables, helper calls, or spreads — any
+  /// Shape-based on purpose: enumerating iteration ops such as `map` and
+  /// `where` cannot cover bare list variables, helper calls, or spreads. Any
   /// expression that is not a fixed-arity list literal is treated as O(N).
   static bool _isRuntimeLengthList(Expression expr) {
     if (expr is! ListLiteral) return true;
@@ -433,7 +433,7 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
 
   /// Whether [type] is `Widget` or a subtype of it. Used both to detect
   /// widget-returning helper methods and to distinguish real widgets from
-  /// value objects (`EdgeInsets`, `TextStyle`, ...) during instance counting.
+  /// value objects such as `EdgeInsets` and `TextStyle` during counting.
   static bool _isWidgetType(DartType? type) {
     if (type is! InterfaceType) return false;
     return type.element.name == 'Widget' ||
@@ -450,8 +450,8 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   /// `List` is not a `Widget` subtype.
   ///
   /// [element] is the invoked or torn-off executable. It rejects SDK
-  /// collection plumbing (`toList`, `cast`, `followedBy`, ...), which yields a
-  /// widget collection without building anything — `items.map(_buildRow)
+  /// collection plumbing such as `toList`, `cast` and `followedBy`, which yields a
+  /// widget collection without building anything, so `items.map(_buildRow)
   /// .toList()` must count `_buildRow` once, not `toList` as well.
   static bool _producesWidgets(DartType? type, Element? element) {
     if (_isWidgetType(type)) return true;
@@ -459,7 +459,7 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
     return !_isSdkExecutable(element);
   }
 
-  /// Whether [type] is an `Iterable` (`List`, `Set`, `Iterable`, ...) whose
+  /// Whether [type] is an `Iterable`, including `List` and `Set`, whose
   /// element type is a widget. `Map<String, Widget>` is not: it does not
   /// implement `Iterable` and is not a shape `children:` accepts.
   static bool _isWidgetIterableType(DartType? type) {

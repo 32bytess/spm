@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-// ReorderableListView.builder is a lazy, viewport-culled list — the same
+// ReorderableListView.builder is a lazy, viewport-culled list. The same
 // contract as ListView.builder. Its itemBuilder runs per visible element.
 // treeListRenderingStrategy: 1; iterationWidgetCount: 1 (Text per element).
 class ReorderableLazyExample extends StatefulWidget {
@@ -55,7 +55,7 @@ class _EagerPageViewExampleState extends State<EagerPageViewExample> {
 }
 
 // SliverList is lazy only when its delegate is. A SliverChildListDelegate
-// materializes every child up front — eager despite the sliver wrapper.
+// materializes every child up front. Eager despite the sliver wrapper.
 // treeListRenderingStrategy: 2.
 class EagerSliverExample extends StatefulWidget {
   const EagerSliverExample({super.key});

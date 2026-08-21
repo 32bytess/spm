@@ -344,7 +344,7 @@ void main() {
       expect(
         singleHelper.helperWidgetCount,
         equals(1),
-        reason: 'buildContent() returns Text — 1 widget',
+        reason: 'buildContent() returns Text, so 1 widget',
       );
 
       final multipleHelpers = helperResults.firstWhere(
@@ -361,7 +361,7 @@ void main() {
         multipleHelpers.treeConstWidgetCount,
         equals(2),
         reason:
-            'buildHeader() and buildFooter() each return a const Text — a '
+            'buildHeader() and buildFooter() each return a const Text, so a '
             'const widget in a helper body is a const unit, so a const swap '
             'inside a helper is visible',
       );
@@ -390,7 +390,7 @@ void main() {
       expect(
         repeated.helperWidgetCount,
         equals(1),
-        reason: 'buildItem() called twice but body counted once — 1 widget',
+        reason: 'buildItem() called twice but body counted once, so 1 widget',
       );
 
       final templateBuild = helperResults.firstWhere(

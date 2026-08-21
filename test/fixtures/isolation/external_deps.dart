@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'deep_deps.dart';
 
-// Direct StatelessWidget child — references DeepWidget (level 2)
+// Direct StatelessWidget child. References DeepWidget (level 2)
 class ExternalChild extends StatelessWidget {
   const ExternalChild({super.key});
   @override
@@ -9,7 +9,7 @@ class ExternalChild extends StatelessWidget {
       const Column(children: [Text('External'), DeepWidget()]);
 }
 
-// StatefulWidget child — isolation must include both the widget AND its State
+// StatefulWidget child. Isolation must include both the widget AND its State
 class ExternalStateful extends StatefulWidget {
   const ExternalStateful({super.key});
   @override
@@ -32,12 +32,12 @@ class ExternalCard extends _BaseCard {
   const ExternalCard();
 }
 
-// Cross-file helper returning List<Widget> — should be included
+// Cross-file helper returning List<Widget>. Should be included
 List<Widget> buildExternalItems(BuildContext context) {
   return [const Text('a'), const Text('b')];
 }
 
-// CustomPainter subclass — should be included
+// CustomPainter subclass. Should be included
 class ExternalPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {}
@@ -45,7 +45,7 @@ class ExternalPainter extends CustomPainter {
   bool shouldRepaint(ExternalPainter old) => false;
 }
 
-// ShapeBorder subclass — should be included
+// ShapeBorder subclass. Should be included
 class ExternalShape extends ShapeBorder {
   const ExternalShape();
   @override
@@ -60,7 +60,7 @@ class ExternalShape extends ShapeBorder {
   ShapeBorder scale(double t) => this;
 }
 
-// Function returning Decoration — should be included
+// Function returning Decoration. Should be included
 BoxDecoration buildExternalDecoration() =>
     const BoxDecoration(color: Colors.blue);
 
@@ -70,4 +70,22 @@ const kExternalColor = Colors.red;
 // Helper function in another file (should NOT be included)
 void externalHelper() {
   print('External helper called');
+}
+
+// Not a widget, but hands one out. `tree_extractor` walks the body of every
+// widget-returning helper a scope calls, so shimming this away would report
+// zero widgets where analyzing the original project counted the divider's
+// subtree. It must be inlined whole.
+class ExternalStyles {
+  static Widget divider() =>
+      const SizedBox(height: 1, child: ColoredBox(color: Colors.grey));
+
+  static const double gap = 8;
+}
+
+// Produces no UI at all, so a declaration-only stand-in cannot move any count.
+class ExternalService {
+  final String prefix = 'svc';
+
+  String label(int id) => '$prefix-$id';
 }

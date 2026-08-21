@@ -15,8 +15,8 @@ void main() {
     );
   });
 
-  group('treeIterationCount — loops and O(N) collection ops', () {
-    test('no loops and no O(N) ops — counter is zero', () {
+  group('treeIterationCount: loops and O(N) collection ops', () {
+    test('no loops and no O(N) ops leave the counter at zero', () {
       final r = results.firstWhere(
         (r) => r.scopeName == '_NoLoopsNoOpsExampleState',
       );
@@ -84,22 +84,22 @@ void main() {
     });
   });
 
-  group('treeMaxIterationNestingDepth — nested vs sequential iteration', () {
-    test('no iteration constructs — depth is zero', () {
+  group('treeMaxIterationNestingDepth: nested vs sequential iteration', () {
+    test('no iteration constructs leave the depth at zero', () {
       final r = results.firstWhere(
         (r) => r.scopeName == '_NoLoopsNoOpsExampleState',
       );
       expect(r.treeMaxIterationNestingDepth, equals(0));
     });
 
-    test('single loop — depth is one', () {
+    test('a single loop gives a depth of one', () {
       final r = results.firstWhere(
         (r) => r.scopeName == '_SingleForLoopExampleState',
       );
       expect(r.treeMaxIterationNestingDepth, equals(1));
     });
 
-    test('sequential loops do not stack — depth stays one', () {
+    test('sequential loops do not stack, so the depth stays one', () {
       final r = results.firstWhere(
         (r) => r.scopeName == '_WhileAndDoWhileExampleState',
       );
@@ -110,7 +110,7 @@ void main() {
       );
     });
 
-    test('chained collection ops do not stack — depth stays one', () {
+    test('chained collection ops do not stack, so the depth stays one', () {
       final r = results.firstWhere(
         (r) => r.scopeName == '_LinearOpsOnlyExampleState',
       );
@@ -121,7 +121,7 @@ void main() {
       );
     });
 
-    test('for inside for — depth is two', () {
+    test('a for inside a for gives a depth of two', () {
       final r = results.firstWhere(
         (r) => r.scopeName == '_NestedForLoopExampleState',
       );
@@ -132,7 +132,7 @@ void main() {
       );
     });
 
-    test('collection op inside a map callback — depth is two', () {
+    test('a collection op inside a map callback gives a depth of two', () {
       final r = results.firstWhere(
         (r) => r.scopeName == '_NestedCollectionOpExampleState',
       );

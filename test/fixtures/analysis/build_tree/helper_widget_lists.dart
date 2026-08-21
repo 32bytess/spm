@@ -32,7 +32,7 @@ class _ListHelperExampleState extends State<ListHelperExample> {
   }
 }
 
-// The list element type is a Widget SUBTYPE, not Widget itself — the real
+// The list element type is a Widget SUBTYPE, not Widget itself. The real
 // `List<DropdownMenuItem<T>> _buildItems()` shape. Iteration inside the helper
 // body must surface too.
 // helperReferenceCount: 1; helperWidgetCount: 2; treeIterationCount: 1.

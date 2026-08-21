@@ -5,7 +5,7 @@ Widget buildBanner() {
   return DecoratedBox(decoration: const BoxDecoration(), child: Text('banner'));
 }
 
-// Helper referenced as a METHOD TEAR-OFF: items.map(_buildRow) — no
+// Helper referenced as a METHOD TEAR-OFF: items.map(_buildRow). No
 // invocation syntax anywhere, but _buildRow runs per element per rebuild.
 // helperReferenceCount: 1; helperWidgetCount: 2 (Padding + Text).
 class TearOffExample extends StatefulWidget {

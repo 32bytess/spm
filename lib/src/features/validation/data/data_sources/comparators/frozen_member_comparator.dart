@@ -1,7 +1,7 @@
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:spm/src/features/validation/domain/entities/validation_report.dart';
 
-/// Check 2 — input data and state seeds must be frozen: the
+/// Check 2: input data and state seeds must be frozen. The
 /// `initState`/`dispose`/`didUpdateWidget` bodies and the field region of
 /// the State class must be identical between base and mutation.
 ///

@@ -8,7 +8,7 @@ class DeepWidget extends StatelessWidget {
   Widget build(BuildContext context) => const Text('deep');
 }
 
-// Non-widget at level 2 — should NOT be included even though a widget references it.
+// Non-widget at level 2. Should NOT be included even though a widget references it.
 class DeepService {
   void doSomething() {}
 }

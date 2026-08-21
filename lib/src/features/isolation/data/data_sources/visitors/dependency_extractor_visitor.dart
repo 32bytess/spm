@@ -4,6 +4,8 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:path/path.dart' as p;
+import 'package:spm/src/features/isolation/data/data_sources/emitters/shim_emitter.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/declaration_names.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonizer.dart';
 
 /// An AST visitor that extracts transitive dependencies of a rebuild scope.
@@ -31,19 +33,40 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
   /// Collected source code for top-level declarations or classes from other files.
   String classCode = '';
 
+  /// Top-level names [classCode] actually declares.
+  ///
+  /// The transplant appends its own declarations once the extractor is done,
+  /// the seeds for lifted bindings and the shims, and has to know which names
+  /// are already spoken for. [_processedKeys] cannot answer that: a name is
+  /// marked processed when it is *considered*, including the ones the widget
+  /// filter then drops, so it over-reports.
+  ///
+  /// Shared with every sub-visitor of the same transplant, so a name inlined
+  /// anywhere in the recursion is known everywhere.
+  final Set<String> emittedNames;
+
   /// A list of references found in other files that need to be resolved and extracted.
   final List<({String filePath, String name})> crossFileRefs = [];
 
   /// The analysis session, used to convert `package:` URIs to file paths.
   final AnalysisSession? _session;
 
+  /// Collects stand-ins for third-party symbols this visitor cannot import.
+  ///
+  /// Optional so the visitor can still be driven without one, in which case
+  /// third-party references are dropped exactly as they were before.
+  final ShimEmitter? shims;
+
   DependencyExtractorVisitor(
     this.originResult,
     this.enclosingClass,
     this._processedKeys,
-    this.packageImports, [
-    this._session,
-  ]);
+    this.packageImports, {
+    AnalysisSession? session,
+    this.shims,
+    Set<String>? emittedNames,
+  }) : _session = session,
+       emittedNames = emittedNames ?? <String>{};
 
   /// Returns true if the [filePath] belongs to the local project (not a package or SDK).
   bool isProjectLocal(String filePath) {
@@ -51,8 +74,8 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     return p.isWithin(root, filePath) || p.equals(root, filePath);
   }
 
-  /// Returns true if [element]'s library is provided by [importedLib] —
-  /// either directly or via one level of re-exports.
+  /// Returns true if [element]'s library is provided by [importedLib], either
+  /// directly or through one level of re-exports.
   static bool _isFromLibrary(Element element, dynamic importedLib) {
     try {
       // Use identifier (canonical URI) to compare libraries; avoid .source
@@ -75,6 +98,10 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
   void _handleElement(Element element) {
     String? name;
     Element? target;
+    // The member the reference actually reached, when [target] is the type
+    // that declares or inherits it. A shim for a third-party type carries only
+    // the members that were reached, so this is what keeps it small.
+    Element? member;
 
     // Resolve the actual target element and its name based on the element type
     if (element is ConstructorElement) {
@@ -82,6 +109,7 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
       if (enclosing is ClassElement) {
         target = enclosing;
         name = enclosing.name;
+        member = element;
       } else {
         return;
       }
@@ -100,13 +128,20 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
         name = variable.name;
       } else {
         final enclosing = element.enclosingElement;
-        if (enclosing is ClassElement) {
+        // `InstanceElement` rather than `ClassElement`: a getter reached
+        // through an extension (`10.sp`, `context.h`) has an
+        // `ExtensionElement` enclosing it, and narrowing to classes dropped
+        // that whole family silently. Sizing extensions on `num` and
+        // `BuildContext` are common enough in real apps that this was the
+        // largest single source of undefined names in isolated output.
+        if (enclosing is InstanceElement) {
           if (enclosing.name == enclosingClass?.namePart.typeName.lexeme) {
             target = element;
             name = element.name;
           } else {
             target = enclosing;
             name = enclosing.name;
+            member = element;
           }
         } else {
           return;
@@ -122,6 +157,7 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
             enclName != enclosingClass?.namePart.typeName.lexeme) {
           target = enclosing;
           name = enclName;
+          member = element;
         } else {
           target = element;
           name = element.name;
@@ -140,6 +176,7 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
             enclName != enclosingClass?.namePart.typeName.lexeme) {
           target = enclosing;
           name = enclName;
+          member = element;
         } else {
           target = element;
           name = element.name;
@@ -185,7 +222,10 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     if (filePath == null) return;
 
     final key = '$filePath::$name';
-    if (!_processedKeys.add(key)) return;
+    // Not an early return any more: the first reference to a third-party type
+    // marks it processed, and every later one names a *different* member the
+    // shim still has to carry.
+    final bool alreadySeen = !_processedKeys.add(key);
 
     if (!isProjectLocal(filePath)) {
       final uri =
@@ -196,7 +236,16 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
       // because we focus on the widget tree structure, not external state managers.
       final bool isFlutterOrDart =
           uri.startsWith('package:flutter') || uri.startsWith('dart:');
-      if (!isFlutterOrDart) return;
+      if (!isFlutterOrDart) {
+        // Importing the package back is not an option, since preventing that
+        // is what this gate is for, but dropping the name silently leaves the
+        // isolated file unanalyzable. A declaration-only stand-in resolves it
+        // while mirroring whether it was a widget, which is the one property
+        // the feature extractor reads off the supertype chain.
+        shims?.request(target ?? element, member: member);
+        return;
+      }
+      if (alreadySeen) return;
 
       // Find the matching import directive in the source file so that we
       // preserve the exact URI and any `as` / `show` / `hide` clauses.
@@ -238,6 +287,8 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
       return;
     }
 
+    if (alreadySeen) return;
+
     if (filePath == originResult.path) {
       _extractSameFile(name);
     } else {
@@ -273,18 +324,11 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     }
 
     for (final decl in originResult.unit.declarations) {
-      if (_nameOf(decl) == name) {
+      if (declaredNames(decl).contains(name)) {
         classCode += '\n${Skeletonizer.skeletonize(decl, originResult)}\n';
+        emittedNames.addAll(declaredNames(decl));
         decl.accept(this);
         return;
-      } else if (decl is TopLevelVariableDeclaration) {
-        for (final variable in decl.variables.variables) {
-          if (variable.name.lexeme == name) {
-            classCode += '\n${Skeletonizer.skeletonize(decl, originResult)}\n';
-            decl.accept(this);
-            return;
-          }
-        }
       }
     }
   }
@@ -357,14 +401,4 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     _safeHandle(node.constructorName);
     super.visitInstanceCreationExpression(node);
   }
-}
-
-String? _nameOf(CompilationUnitMember decl) {
-  if (decl is ClassDeclaration) return decl.namePart.typeName.lexeme;
-  if (decl is EnumDeclaration) return decl.namePart.typeName.lexeme;
-  if (decl is FunctionDeclaration) return decl.name.lexeme;
-  if (decl is MixinDeclaration) return decl.name.lexeme;
-  if (decl is GenericTypeAlias) return decl.name.lexeme;
-  if (decl is ClassTypeAlias) return decl.name.lexeme;
-  return null;
 }

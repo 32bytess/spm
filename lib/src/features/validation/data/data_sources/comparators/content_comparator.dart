@@ -2,7 +2,7 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:spm/src/features/validation/domain/entities/validation_report.dart';
 import '../visitors/rendered_leaf_visitor.dart';
 
-/// Check 3 — rendered content must be identical: the multiset of displayed
+/// Check 3: rendered content must be identical. The multiset of displayed
 /// `Text`/`SelectableText`/`Tooltip` strings and the sets of `Icons.*` and
 /// asset references may not differ between base and mutation.
 class ContentComparator {

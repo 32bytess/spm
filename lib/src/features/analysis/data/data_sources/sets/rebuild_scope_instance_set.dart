@@ -4,7 +4,7 @@ import 'package:analyzer/dart/ast/ast.dart';
 ///
 /// A scope is either a class Flutter rebuilds as a unit (`State` subclass,
 /// `ConsumerWidget`) or the builder callback of a state-management widget
-/// (`BlocBuilder`, `Obx`, ...) that its package re-invokes on its own.
+/// such as `BlocBuilder` or `Obx`, which its package re-invokes on its own.
 typedef RebuildScopeInstance = ({
   String instanceId,
   String filePath,

@@ -20,7 +20,7 @@ class CapturedVariable {
 
 /// Collects the variables a rebuild scope captures from its surroundings.
 ///
-/// A builder callback such as `BlocBuilder(builder: (context, state) { … })`
+/// A builder callback such as `BlocBuilder(builder: (context, state) {})`
 /// may read parameters and locals of the method it sits in, or members it
 /// inherits from a base class supplied by a package. Neither binding travels
 /// with the scope when it is transplanted, so the isolated file ends up
@@ -28,11 +28,11 @@ class CapturedVariable {
 ///
 /// Two kinds are collected:
 ///
-///  * **Enclosing locals and parameters** — resolved to a [LocalVariableElement]
+///  * **Enclosing locals and parameters**, resolved to a [LocalVariableElement]
 ///    or [FormalParameterElement] whose declaration sits outside the scope's
 ///    source range. `bool onlyNKN` on the method wrapping a `BlocBuilder` is
 ///    the canonical case.
-///  * **Members inherited from a foreign supertype** — a getter or field whose
+///  * **Members inherited from a foreign supertype**: a getter or field whose
 ///    enclosing class lives outside the project, as `controller` does on
 ///    `GetView` from `package:get`. The transplant never emits such a class, so
 ///    the member has to become a field of its own.
@@ -58,11 +58,12 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
   /// End offset of the scope being transplanted.
   final int scopeEnd;
 
-  /// Names already emitted by the caller (lifted parameters, `context`, …).
+  /// Names already emitted by the caller, such as lifted parameters and
+  /// `context`.
   final Set<String> _ignore;
 
   final Map<String, CapturedVariable> _found = {};
-  final Set<String> _globals = {};
+  final Map<String, CapturedVariable> _globals = {};
 
   /// Captured variables in declaration order, deduplicated by name.
   List<CapturedVariable> get captured {
@@ -73,12 +74,20 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
 
   /// Top-level variables the scope reads from another file in the project.
   ///
-  /// These are mutable application-wide handles — nMobile's `application`
-  /// service locator is the recurring case. The dependency extractor drops them
+  /// These are mutable application-wide handles, of which nMobile's
+  /// `application` service locator is the recurring case. The extractor drops
   /// because they are not widgets, so the isolated file has to seed them
   /// itself. They are not lifted to fields: the declaration stays top-level, so
   /// only an assignment is needed.
-  List<String> get capturedGlobals => _globals.toList()..sort();
+  ///
+  /// The declared type travels with the name because the isolated file may have
+  /// to declare the handle as well as seed it, and nothing else in the
+  /// transplant knows what type `application` had.
+  List<CapturedVariable> get capturedGlobals {
+    final list = _globals.values.toList()
+      ..sort((a, b) => a.name.compareTo(b.name));
+    return list;
+  }
 
   @override
   void visitSimpleIdentifier(SimpleIdentifier node) {
@@ -90,7 +99,7 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
     if (_found.containsKey(name)) return;
 
     // A qualified reference (`foo.bar`, `foo.bar()`) says nothing about `bar`
-    // being free — only the target matters, and it is visited separately.
+    // being free. Only the target matters, and it is visited separately.
     if (_isQualifiedTail(node)) return;
 
     final element = _elementOf(node);
@@ -113,7 +122,20 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
       return;
     }
 
-    if (_isCrossFileProjectGlobal(element)) _globals.add(name);
+    if (_isCrossFileProjectGlobal(element)) {
+      // An uninformative type drops a lifted field above, because a field
+      // pinned to nothing is not worth emitting. A global cannot be dropped
+      // the same way: the generated `initState` assigns to it either way, so
+      // it has to be declared, and `dynamic` is the honest declaration.
+      //
+      // `order` goes unused, because [capturedGlobals] sorts by name, but the
+      // record is shared with lifted fields, which do rely on it.
+      _globals[name] = CapturedVariable(
+        name,
+        _typeOf(element) ?? 'dynamic',
+        _globals.length,
+      );
+    }
   }
 
   /// True for a top-level variable declared in another file of this project.
@@ -132,7 +154,7 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
 
     // Only mutable handles need seeding. A `final`/`const` top-level carries
     // its value in its own declaration, so whoever supplies the declaration
-    // supplies the value too — assigning to it would not even compile.
+    // supplies the value too. Assigning to it would not even compile.
     if (target.isFinal || target.isConst) return false;
 
     final uri = _libraryUri(target);
@@ -166,13 +188,13 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
     return false;
   }
 
-  /// True for a getter or field inherited from a third-party class — something
+  /// True for a getter or field inherited from a third-party class, something
   /// the transplant will never emit, such as `GetView.controller`.
   ///
   /// Members from `package:flutter` and `dart:` are excluded: the isolated file
   /// imports those, so `widget`, `mounted` and `context` on [State] resolve
   /// there and must not be shadowed by a field. Members of project classes are
-  /// excluded too — the dependency extractor already copies those.
+  /// excluded too, since the dependency extractor already copies those.
   bool _isForeignInstanceMember(Element element) {
     final bool isMember =
         element is PropertyAccessorElement || element is FieldElement;
@@ -192,8 +214,8 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
   /// Whether [libraryUri] resolves to a file inside the analysed project.
   ///
   /// A project library is routinely reached through its own `package:` URI, so
-  /// the session's URI converter has to run before the path comparison —
-  /// otherwise every `package:` import looks third-party.
+  /// the session's URI converter has to run before the path comparison.
+  /// Otherwise every `package:` import looks third-party.
   bool _isProjectLocal(String libraryUri) {
     final path = _resolveToPath(libraryUri);
     if (path == null) return false;
@@ -240,9 +262,9 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
   ///
   /// A getter's `type` is its *function* type (`Controller Function()`), not
   /// the value it yields, so accessors have to be read through `returnType`.
-  /// Reading `type` first would send every inherited getter — `GetView`'s
-  /// `T get controller` being the common one — into the `Function` guard below
-  /// and drop it silently.
+  /// Reading `type` first would send every inherited getter into the
+  /// `Function` guard below and drop it silently, with `GetView`'s
+  /// `T get controller` the common casualty.
   String? _typeOf(Element element) {
     try {
       final dynamic typed = element;

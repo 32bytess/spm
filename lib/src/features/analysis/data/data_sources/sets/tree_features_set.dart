@@ -13,11 +13,11 @@ typedef TreeFeaturesSet = ({
   int treeMaxIterationNestingDepth,
 
   /// Non-const widgets built per element (loops, collection-op callbacks,
-  /// lazy-list builders) — the per-element cost multiplier.
+  /// lazy-list builders): the per-element cost multiplier.
   int iterationWidgetCount,
 
-  /// Non-const value-object allocations (EdgeInsets, TextStyle, ...) paid on
-  /// every rebuild.
+  /// Non-const value-object allocations such as `EdgeInsets` and `TextStyle`,
+  /// paid on every rebuild.
   int valueObjectAllocCount,
   int helperWidgetCount,
   int helperMaxWidgetNestingDepth,

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 // Minimal stand-ins for the state-management packages. Detection of consumer
 // widgets and builder-pattern widgets is name-based, so the real packages are
-// not needed — and a fixture that imported them would fail to resolve and be
+// not needed, and a fixture that imported them would fail to resolve and be
 // skipped for compile errors.
 
 abstract class ConsumerWidget extends StatelessWidget {
@@ -50,7 +50,7 @@ class BuilderHost extends StatefulWidget {
 }
 
 // Three builder scopes nested inside one State scope. The State row counts
-// their widgets too — a parent rebuild does re-run every callback.
+// their widgets too. A parent rebuild does re-run every callback.
 class _BuilderHostState extends State<BuilderHost> {
   int count = 0;
 

@@ -118,7 +118,7 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
   /// Everything outside the root is dropped: the closure reaches into the SDK
   /// and the pub cache, and those are neither editable by a commit nor
   /// meaningful as a repo-relative path. Filtering here rather than in the
-  /// extractor keeps the root — which the extractor does not know — in the one
+  /// extractor keeps the root, which the extractor does not know, in the one
   /// place that does.
   List<String> _withinRoot(List<String> paths, String root) {
     final within = <String>[];

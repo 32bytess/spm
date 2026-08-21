@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-// iterationWidgetCount: 2 — Card + Text live inside the .map callback and are
+// iterationWidgetCount: 2. Card + Text live inside the .map callback and are
 // built once per element; Column and the header Text are one-shot.
 class MapIterationExample extends StatefulWidget {
   const MapIterationExample({super.key});
@@ -29,7 +29,7 @@ class _MapIterationExampleState extends State<MapIterationExample> {
   }
 }
 
-// iterationWidgetCount: 2 — the for-loop lives in a helper body; SizedBox +
+// iterationWidgetCount: 2. The for-loop lives in a helper body; SizedBox +
 // Text are per-element, the returned Column is one-shot (helper signals merge).
 class LoopHelperIterationExample extends StatefulWidget {
   const LoopHelperIterationExample({super.key});
@@ -63,7 +63,7 @@ class _LoopHelperIterationExampleState
   }
 }
 
-// iterationWidgetCount: 2 — the itemBuilder of a lazy list runs per visible
+// iterationWidgetCount: 2. The itemBuilder of a lazy list runs per visible
 // element: ListTile + Text count, the ListView itself does not.
 class LazyBuilderIterationExample extends StatefulWidget {
   const LazyBuilderIterationExample({super.key});
@@ -92,8 +92,8 @@ class _LazyBuilderIterationExampleState
   }
 }
 
-// iterationWidgetCount: 0 — fixed literal children, nothing is per-element.
-// valueObjectAllocCount: 1 — the non-const EdgeInsets.all(4) margin allocates
+// iterationWidgetCount: 0. Fixed literal children, nothing is per-element.
+// valueObjectAllocCount: 1. The non-const EdgeInsets.all(4) margin allocates
 // every rebuild; the const padding is canonicalized and free.
 class FlatConstValueObjectExample extends StatefulWidget {
   const FlatConstValueObjectExample({super.key});

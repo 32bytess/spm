@@ -1,6 +1,6 @@
 /*
 integration test for custom StatefulWidget children: a StatefulWidget has no
-build() of its own — the extractor must resolve its State class (via the
+build() of its own. The extractor must resolve its State class (via the
 createState() body, falling back to `extends State<W>`) and analyze that
 build, its helpers, and its subtree.
 */

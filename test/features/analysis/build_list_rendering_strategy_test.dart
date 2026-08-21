@@ -55,7 +55,7 @@ void main() {
       equals(2),
       reason:
           'no iteration op appears anywhere, but children: rows is still '
-          'runtime-length — the shape rule, not an op whitelist, must decide',
+          'runtime-length. The shape rule, not an op whitelist, must decide',
     );
   });
 

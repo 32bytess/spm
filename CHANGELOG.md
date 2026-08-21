@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.5.0
+
+Every fix below changes what `isolate` writes, and the first one changes the metrics `analyze`
+reads back out of it, so results from 0.4.0 and 0.5.0 cannot be compared or mixed in one dataset.
+
+### Fixed
+
+- `isolate` discarded part of what its own dependency crawl resolved. The cross-file loop recursed
+  into each inlined declaration with a new visitor and then read only that visitor's list of
+  further cross-file references, dropping every declaration it had resolved inside the file it was
+  already reading. The base class of an inlined widget is the case that mattered: a widget is
+  inlined precisely because its resolved supertype chain reaches `Widget`, so emitting the subclass
+  without its base left the chain broken. That is not only a compile error. `analyze` decides
+  between a widget and a value object by walking that chain, so the allocation moved into
+  `valueObjectAllocCount` and its whole build subtree went missing from the metrics.
+- A rebuild scope's own constructor was copied verbatim into the generated `_GeneratedWidgetState`,
+  where its name no longer matches the enclosing class and Dart reads it as a bodiless method. The
+  constructor is now dropped, and fields it used to initialise are marked `late` so dropping it does
+  not leave them unassigned. Both field formal parameters and initialiser lists are recognised.
+  Consumer and builder scopes were hit hardest, because converting one into a `State` harness
+  carried its widget constructor across.
+- Default values written with the pre-Dart-3 separator, `{int flex: 2}` and `[double size: 8]`, are
+  rewritten to use `=`. Repository code old enough to use the colon form used to be copied verbatim
+  into a file that a modern SDK then refuses to parse.
+- The symbols the generated `initState` assigns from are now declared in the isolated file. A lifted
+  field was seeded from `fixtureWallets` and a captured global from `fooValue`, but nothing declared
+  either name, so the file carried an undefined-name error and `analyze` skipped it. Each is
+  declared `late` and left unassigned on purpose: a fabricated default would be measured as though
+  it were the value that was really there.
+- Members reached through an extension, such as `10.sp` or `context.h`, were dropped by the
+  dependency crawl, which matched only members enclosed by a class. Extensions are now matched too.
+
+### Changed
+
+- `isolate` no longer drops the dependencies it does not inline. A declaration that can build UI is
+  inlined whole, which now includes a class that is not a widget itself but declares a member
+  returning one, since `analyze` walks the body of every widget-returning helper a scope calls.
+  Everything else, including third-party symbols that were previously excluded outright, gets a
+  declaration-only stand-in: the name, the members the scope actually reaches, and nothing else.
+  Bodies throw and constants are `null`.
+- A stand-in mirrors whether the original was a widget, so a third-party widget still classifies as
+  a widget and a value object still classifies as a value object. It cannot reproduce that widget's
+  own `build` body, so an isolated scope that instantiates a third-party widget reports a smaller
+  tree than the same scope measured inside its original project.
+- The isolated file's layout is unchanged. Stand-ins and seeds are appended to the same file rather
+  than written to a separate dependencies file, so output paths and the mapping JSONL are the same
+  as before.
+
 ## 0.4.0
 
 ### Added

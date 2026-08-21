@@ -61,7 +61,7 @@ class RunWithInjectionCommand extends Command<int> {
     argParser.addFlag(
       'no-inject',
       help:
-          'Skip injection and revert steps — assumes the project is already instrumented.',
+          'Skip injection and revert steps. Assumes the project is already instrumented.',
       negatable: false,
     );
     argParser.addFlag(

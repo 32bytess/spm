@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-// treeListRenderingStrategy: 0 — fixed-arity literal; the if-element is an
+// treeListRenderingStrategy: 0. Fixed-arity literal; the if-element is an
 // O(1) branch, not a runtime-length expansion.
 class FixedColumnExample extends StatefulWidget {
   const FixedColumnExample({super.key});
@@ -24,7 +24,7 @@ class _FixedColumnExampleState extends State<FixedColumnExample> {
   }
 }
 
-// treeListRenderingStrategy: 2 — spread of a mapped iterable inside the
+// treeListRenderingStrategy: 2. Spread of a mapped iterable inside the
 // literal makes the child count runtime-length.
 class SpreadColumnExample extends StatefulWidget {
   const SpreadColumnExample({super.key});
@@ -48,7 +48,7 @@ class _SpreadColumnExampleState extends State<SpreadColumnExample> {
   }
 }
 
-// treeListRenderingStrategy: 2 — collection-for element.
+// treeListRenderingStrategy: 2. Collection-for element.
 class ForElementRowExample extends StatefulWidget {
   const ForElementRowExample({super.key});
 
@@ -71,7 +71,7 @@ class _ForElementRowExampleState extends State<ForElementRowExample> {
   }
 }
 
-// treeListRenderingStrategy: 2 — bare list variable: no iteration op in
+// treeListRenderingStrategy: 2. Bare list variable: no iteration op in
 // sight, but the child count is still runtime-length.
 class VariableChildrenExample extends StatefulWidget {
   const VariableChildrenExample({super.key});
@@ -96,7 +96,7 @@ class _VariableChildrenExampleState extends State<VariableChildrenExample> {
   }
 }
 
-// treeListRenderingStrategy: 2 — the motivating blind spot of the old
+// treeListRenderingStrategy: 2. The motivating blind spot of the old
 // boolean: SingleChildScrollView over an eagerly-mapped Column builds every
 // child on every rebuild, with no viewport culling.
 class ScrollViewColumnExample extends StatefulWidget {
@@ -124,7 +124,7 @@ class _ScrollViewColumnExampleState extends State<ScrollViewColumnExample> {
   }
 }
 
-// treeListRenderingStrategy: 1 — SliverList is viewport-bounded by contract.
+// treeListRenderingStrategy: 1. SliverList is viewport-bounded by contract.
 class SliverListExample extends StatefulWidget {
   const SliverListExample({super.key});
 
@@ -156,7 +156,7 @@ class _SliverListExampleState extends State<SliverListExample> {
   }
 }
 
-// treeListRenderingStrategy: 1 — the lazy list lives inside a helper body;
+// treeListRenderingStrategy: 1. The lazy list lives inside a helper body;
 // helper signals merge into the tree-level maximum.
 class LazyHelperExample extends StatefulWidget {
   const LazyHelperExample({super.key});
@@ -187,7 +187,7 @@ class _LazyHelperExampleState extends State<LazyHelperExample> {
   }
 }
 
-// treeListRenderingStrategy: 2 — eager beats lazy: the tree-level value is
+// treeListRenderingStrategy: 2. Eager beats lazy: the tree-level value is
 // the maximum, and the spread Column outranks the ListView.builder.
 class EagerBeatsLazyExample extends StatefulWidget {
   const EagerBeatsLazyExample({super.key});

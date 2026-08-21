@@ -108,7 +108,7 @@ void main() {
         equals(2),
         reason:
             'build spreads into Row children (eager) and _grid() feeds Column '
-            'a runtime-length variable — both are the eager O(N) case',
+            'a runtime-length variable, so both are the eager O(N) case',
       );
     });
   });

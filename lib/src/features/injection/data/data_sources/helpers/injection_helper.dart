@@ -98,13 +98,13 @@ class InjectionHelper {
       final classBody = classNode.body;
       if (classBody is! BlockClassBody) continue;
 
-      // Insert instanceId getter right after `{` (higher offset — do first).
+      // Insert instanceId getter right after `{` (higher offset, so do first).
       final insertOffset = classBody.leftBracket.end;
       final getterText = '\n  @override\n  String get instanceId => \'$id\';\n';
       content = content.replaceRange(insertOffset, insertOffset, getterText);
 
       // Replace the `State` name with `SpmState` in the extends clause
-      //    (lower offset — unaffected by the insertion above).
+      //    (lower offset, unaffected by the insertion above).
       content = content.replaceRange(
         superclass.name.offset,
         superclass.name.end,
@@ -160,7 +160,7 @@ class InjectionHelper {
         }
       }
 
-      // Remove the instanceId getter (higher offset — do first).
+      // Remove the instanceId getter (higher offset, so do first).
       if (instanceIdGetter != null) {
         final removeStart = classBody.leftBracket.end;
         final removeEnd = min(instanceIdGetter.end + 1, content.length);
@@ -168,7 +168,7 @@ class InjectionHelper {
       }
 
       // Replace `SpmState` with `State` in the extends clause
-      //    (lower offset — unaffected by the removal above).
+      //    (lower offset, unaffected by the removal above).
       content = content.replaceRange(
         superclass.name.offset,
         superclass.name.end,

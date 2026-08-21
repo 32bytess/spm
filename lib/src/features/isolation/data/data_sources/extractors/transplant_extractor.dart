@@ -1,8 +1,11 @@
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/session.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/element/element.dart';
 import 'package:spm/src/core/errors/exceptions.dart';
 import 'package:spm/src/features/analysis/data/data_sources/extensions/state_class_detector.dart';
+import 'package:spm/src/features/isolation/data/data_sources/emitters/shim_emitter.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/declaration_names.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonizer.dart';
 import 'package:spm/src/features/isolation/data/data_sources/sets/isolation_match_set.dart';
 import 'package:spm/src/features/isolation/data/data_sources/visitors/captured_variable_visitor.dart';
@@ -49,7 +52,7 @@ class TransplantExtractor {
     String paramFields = '';
 
     // Names lifted onto the generated State, in emission order. Drives the
-    // field list, the generated initState and the promotion casts — so it has
+    // field list, the generated initState and the promotion casts, so it has
     // to be complete before any source is rendered.
     final liftedFields = <CapturedVariable>[
       ..._liftedParameters(scopeNode, match),
@@ -80,12 +83,20 @@ class TransplantExtractor {
 
     final externalImports = <String>{"import 'package:flutter/material.dart';"};
 
+    // Names the isolated file declares by inlining, shared across the whole
+    // recursion. The shim emitter reads it at render time, so a name inlined
+    // late still wins over a shim requested early.
+    final emittedNames = <String>{};
+    final shims = ShimEmitter(emittedNames);
+
     final extractor = DependencyExtractorVisitor(
       result,
       enclosingClass,
       processedKeys,
       externalImports,
-      session,
+      session: session,
+      shims: shims,
+      emittedNames: emittedNames,
     );
 
     String widgetFields = '';
@@ -203,13 +214,57 @@ class TransplantExtractor {
       scopeNode.implementsClause?.accept(extractor);
       scopeNode.withClause?.accept(extractor);
 
+      // A constructor copied into `_GeneratedWidgetState` keeps the name of the
+      // class it came from, which no longer matches the class it lands in, so
+      // Dart reads it as a bodiless method. The scope's own constructor is
+      // never what is measured -- the generated class supplies its own
+      // construction -- so it is dropped rather than renamed. What it did
+      // supply is field initialisation, and dropping that silently would leave
+      // those fields unassigned, so they are marked `late` below.
+      final ctorInitialisedFields = <String>{};
+      for (final member in (scopeNode.body as BlockClassBody).members) {
+        if (member is! ConstructorDeclaration) continue;
+        for (final param in member.parameters.parameters) {
+          // A default value is a clause on the parameter in analyzer >= 13,
+          // not a wrapper node, so `this.x = v` needs no unwrapping.
+          if (param is FieldFormalParameter) {
+            ctorInitialisedFields.add(param.name.lexeme);
+          }
+        }
+        for (final initializer in member.initializers) {
+          if (initializer is ConstructorFieldInitializer) {
+            ctorInitialisedFields.add(initializer.fieldName.name);
+          }
+        }
+      }
+
       // Extract all members of the original class (methods, fields, getters)
       for (final member in (scopeNode.body as BlockClassBody).members) {
         if (member is MethodDeclaration && member.name.lexeme == 'build') {
           continue;
         }
-        extractor.memberCode +=
-            '\n${Skeletonizer.skeletonize(member, result, rewriter: rewriter)}\n';
+        if (member is ConstructorDeclaration) {
+          // Still traversed: default values and initialiser expressions can
+          // reference declarations the isolated file needs.
+          member.accept(extractor);
+          continue;
+        }
+        var source = Skeletonizer.skeletonize(
+          member,
+          result,
+          rewriter: rewriter,
+        );
+        if (member is FieldDeclaration &&
+            !member.isStatic &&
+            member.fields.lateKeyword == null &&
+            member.fields.variables.any(
+              (v) =>
+                  v.initializer == null &&
+                  ctorInitialisedFields.contains(v.name.lexeme),
+            )) {
+          source = 'late $source';
+        }
+        extractor.memberCode += '\n$source\n';
         member.accept(extractor);
       }
     } else if (scopeNode is Block) {
@@ -222,7 +277,7 @@ class TransplantExtractor {
           .join('\n');
       scopeNode.accept(extractor);
     } else if (scopeNode is FunctionExpression) {
-      // Handle builder functions (e.g., BlocBuilder builder: (context, state) => ...)
+      // Handle builder functions such as `BlocBuilder(builder: (context, state) => …)`.
       final body = scopeNode.body;
       if (body is BlockFunctionBody) {
         buildBody = body.block.statements
@@ -270,31 +325,34 @@ class TransplantExtractor {
       if (unitResult is! ResolvedUnitResult) continue;
 
       for (final decl in unitResult.unit.declarations) {
-        bool matchFound = false;
-        if (_nameOf(decl) == ref.name) {
-          matchFound = true;
-        } else if (decl is TopLevelVariableDeclaration) {
-          for (final variable in decl.variables.variables) {
-            if (variable.name.lexeme == ref.name) {
-              matchFound = true;
-              break;
-            }
-          }
-        }
-
-        if (matchFound) {
-          // Only include declarations relevant to the widget build tree:
-          //  - EnumDeclaration       → include + recurse
-          //  - widget ClassDeclaration → include + recurse (find its widget/enum deps too)
-          //  - Widget-returning FunctionDeclaration → include + recurse
-          //  - Everything else (models, services, constants) → skip
+        if (declaredNames(decl).contains(ref.name)) {
+          // A declaration is inlined whole when it can contribute to the
+          // build tree, and shimmed when it cannot:
+          //  - EnumDeclaration                    → inline + recurse
+          //  - widget ClassDeclaration            → inline + recurse
+          //  - class declaring a UI-returning
+          //    member such as `Widget buildRow()`  -> inline + recurse
+          //  - UI-returning FunctionDeclaration   → inline + recurse
+          //  - everything else (models, services,
+          //    constants)                         → declaration-only shim
+          //
+          // The middle case is the one the widget filter alone gets wrong.
+          // `tree_extractor` walks the body of every widget-returning helper it
+          // sees, so a class that is not itself a widget but hands one out,
+          // `AppStyles.buildDivider()` being the recurring shape, contributes
+          // widgets to the metrics. Shimming it away reports zero where
+          // analyzing the original project counted a subtree, which is a wrong
+          // number rather than a missing file.
           final bool isWidget = decl is ClassDeclaration && _isUiClass(decl);
+          final bool declaresUi =
+              decl is ClassDeclaration && !isWidget && _declaresUiMember(decl);
           final bool isWidgetFn =
               decl is FunctionDeclaration && _returnsUi(decl);
 
-          if (decl is EnumDeclaration || isWidget || isWidgetFn) {
+          if (decl is EnumDeclaration || isWidget || declaresUi || isWidgetFn) {
             extractor.classCode +=
                 '\n${Skeletonizer.skeletonize(decl, unitResult)}\n';
+            emittedNames.addAll(declaredNames(decl));
 
             // For StatefulWidgets, pull in the companion State class.
             final ClassDeclaration? widgetDecl =
@@ -316,10 +374,40 @@ class TransplantExtractor {
               widgetDecl,
               processedKeys,
               externalImports,
-              session,
+              session: session,
+              shims: shims,
+              emittedNames: emittedNames,
             );
             decl.accept(sub);
             pending.addAll(sub.crossFileRefs);
+
+            // Whatever the sub-visitor resolved *within its own file* has to
+            // come across too. Taking only `crossFileRefs` discarded it, and
+            // the base class of an inlined widget is the case that hurts:
+            // `_isUiClass` admits `class ExternalCard extends _BaseCard`
+            // because the resolved chain reaches `StatelessWidget`, but
+            // `_BaseCard` lives beside it and was dropped, so the emitted file
+            // says `extends_non_class` and the chain is gone. A widget whose
+            // supertype no longer resolves is not merely an error: it stops
+            // being a widget, so `BuildMetricsVisitor` counts it as a value
+            // object and never walks its build tree.
+            //
+            // `memberCode` is deliberately not merged: it holds members of
+            // `widgetDecl`, which the skeletonised `decl` above already
+            // carries, and hoisting them would redeclare them at top level.
+            //
+            // `_extractSameFile` applies no widget filter, so this inlines
+            // same-file dependencies whole. That is the intended rule, not an
+            // oversight: within a file take everything, across files take only
+            // what can build UI and shim the rest. The closure crosses a file
+            // boundary only through the gate below, so the ungated part stays
+            // bounded to one file at a time.
+            extractor.classCode += sub.classCode;
+          } else {
+            // Not reachable as UI, so a stand-in cannot move a widget count:
+            // the inline gate above has already established that neither the
+            // declaration nor any member of it produces a widget.
+            _requestShims(decl, shims);
           }
           break;
         }
@@ -341,8 +429,8 @@ class TransplantExtractor {
       if (directive is! ImportDirective) continue;
       final prefix = (directive as dynamic).prefix?.name as String?;
       if (prefix == null || !allCode.contains('$prefix.')) continue;
-      // Apply the same flutter/dart-only filter used in the visitor —
-      // prefix-aliased imports from 3rd party packages are excluded.
+      // Apply the same flutter/dart-only filter used in the visitor:
+      // prefix-aliased imports from third-party packages are excluded.
       final uriValue =
           (directive as dynamic).uri?.stringValue as String? ??
           directive.toSource();
@@ -359,6 +447,15 @@ class TransplantExtractor {
       liftedGlobals,
       extractor.memberCode,
     );
+
+    // Seeds are declared before the shims are rendered, so a captured global
+    // that the emitter also saw is declared once, by the seed builder.
+    final seedDeclarations = _buildSeedDeclarations(
+      lifted: liftedFields,
+      globals: liftedGlobals,
+      declared: emittedNames,
+    );
+    final shimDeclarations = shims.render();
 
     // Generate the final self-contained file
     return '''
@@ -384,6 +481,60 @@ $buildBody
 }
 
 $fullClassCode
+$seedDeclarations$shimDeclarations''';
+  }
+
+  /// Declares the symbols the transplant's own seeding convention invents.
+  ///
+  /// [_buildInitState] assigns each lifted binding from a `fixture<Name>`
+  /// symbol and each captured global from a `<name>Value` one, but nothing
+  /// declared them: the convention assumed someone would write the
+  /// declarations alongside the output by hand. An undeclared seed is an
+  /// error-severity diagnostic, and `spm analyze` skips any file that carries
+  /// one, so the convention as it stood made the isolated file unreadable by
+  /// the very tool it exists to feed.
+  ///
+  /// Each seed is declared `late` and left unassigned, for the same reason the
+  /// lifted fields are: a fabricated default would be measured as though it
+  /// were the real value, where an unset `late` throws on read. Nothing here
+  /// can move a feature count: a top-level variable is not a widget, and the
+  /// generated `build` never reads one except through the field it seeds.
+  ///
+  /// The captured global itself is declared too when [declared] does not
+  /// already carry it, since `initState` assigns to it.
+  ///
+  /// [declared] is both read and written: every name emitted here is added to
+  /// it, so the shim emitter that renders next does not declare it a second
+  /// time.
+  String _buildSeedDeclarations({
+    required List<CapturedVariable> lifted,
+    required List<CapturedVariable> globals,
+    required Set<String> declared,
+  }) {
+    // Insertion-ordered so the output stays byte-identical between runs.
+    final declarations = <String, String>{};
+
+    void declare(String name, String type) {
+      if (declared.contains(name)) return;
+      declarations.putIfAbsent(name, () => 'late $type $name;');
+    }
+
+    for (final g in globals) {
+      declare(g.name, g.type);
+      declare('${g.name}Value', g.type);
+    }
+    for (final f in lifted) {
+      declare(_fixtureNameFor(f.name), f.type);
+    }
+
+    if (declarations.isEmpty) return '';
+    declared.addAll(declarations.keys);
+    return '''
+
+// Seeds for the bindings the transplanted scope used to receive from the app.
+// Left unassigned on purpose: reading one throws rather than quietly standing
+// in for the value that was really there.
+${declarations.values.join('\n')}
 ''';
   }
 
@@ -391,17 +542,17 @@ $fullClassCode
   ///
   /// The transplanted scope no longer receives its inputs from the surrounding
   /// app, so each lifted field needs a value. Rather than invent one, this
-  /// emits a reference to a conventionally named symbol — field `wallets`
-  /// becomes `wallets = fixtureWallets;` — which the caller then defines
+  /// emits a reference to a conventionally named symbol, so field `wallets`
+  /// becomes `wallets = fixtureWallets;`, which the caller then defines
   /// alongside the isolated file. The convention makes the required symbol
   /// names predictable instead of leaving them to be rediscovered per scope.
   ///
   /// Returns an empty string when nothing was lifted, or when the transplanted
-  /// class already brought its own `initState` in [memberCode] — overwriting a
-  /// real one would discard setup the scope depends on.
+  /// class already brought its own `initState` in [memberCode], since
+  /// overwriting a real one would discard setup the scope depends on.
   String _buildInitState(
     List<CapturedVariable> lifted,
-    List<String> globals,
+    List<CapturedVariable> globals,
     String memberCode,
   ) {
     if (lifted.isEmpty && globals.isEmpty) return '';
@@ -409,7 +560,7 @@ $fullClassCode
 
     final assignments = [
       // Globals first: a field initialiser may read one.
-      ...globals.map((g) => '    $g = ${g}Value;'),
+      ...globals.map((g) => '    ${g.name} = ${g.name}Value;'),
       ...lifted.map((f) => '    ${f.name} = ${_fixtureNameFor(f.name)};'),
     ].join('\n');
 
@@ -433,9 +584,9 @@ $assignments
   /// Drops a type's outer nullability so it can back a `late` field.
   ///
   /// Only the trailing `?` is removed. Stripping every `?` in the string would
-  /// rewrite the type's interior — `(Wallet?, Wallet?)` became `(Wallet, Wallet)`
-  /// and `Map<String, int?>` became `Map<String, int>`, neither of which is the
-  /// declared type.
+  /// rewrite the type's interior: `(Wallet?, Wallet?)` became
+  /// `(Wallet, Wallet)` and `Map<String, int?>` became `Map<String, int>`,
+  /// neither of which is the declared type.
   String _nonNullable(String type) =>
       type.endsWith('?') ? type.substring(0, type.length - 1) : type;
 
@@ -443,7 +594,7 @@ $assignments
   ///
   /// A transplanted scope no longer gets called with arguments, so whatever it
   /// declared as a parameter has to live on the State instead. `context` is the
-  /// exception — `State` already provides one.
+  /// exception, since `State` already provides one.
   List<CapturedVariable> _liftedParameters(
     AstNode scopeNode,
     IsolationMatch match,
@@ -533,8 +684,8 @@ $assignments
         }
       } catch (_) {}
 
-      // Step 3: walk up to a generic widget (BlocBuilder, Consumer, …) and
-      // extract the state/model type from its type arguments.
+      // Step 3: walk up to a generic widget such as `BlocBuilder` or
+      // `Consumer` and extract the state/model type from its type arguments.
       try {
         AstNode? current = parentFunc.parent;
         while (current != null) {
@@ -615,16 +766,6 @@ $assignments
     if (start < src.length) result.add(src.substring(start).trim());
     return result;
   }
-}
-
-String? _nameOf(CompilationUnitMember decl) {
-  if (decl is ClassDeclaration) return decl.namePart.typeName.lexeme;
-  if (decl is EnumDeclaration) return decl.namePart.typeName.lexeme;
-  if (decl is FunctionDeclaration) return decl.name.lexeme;
-  if (decl is MixinDeclaration) return decl.name.lexeme;
-  if (decl is GenericTypeAlias) return decl.name.lexeme;
-  if (decl is ClassTypeAlias) return decl.name.lexeme;
-  return null;
 }
 
 /// Base class names that identify a UI-related class.
@@ -717,6 +858,62 @@ bool _isStatefulWidget(ClassDeclaration decl) {
   return false;
 }
 
+/// Whether [decl] hands out UI without being a widget itself.
+///
+/// A theme or helper class such as `AppStyles` is not a widget, so
+/// [_isUiClass] rejects it. But `tree_extractor` walks the body of every
+/// widget-returning helper a scope calls, so `AppStyles.buildDivider()`
+/// contributes real widgets to the recorded features. Reducing such a class to
+/// a stand-in reports zero widgets where analyzing the original project counted
+/// a subtree, so it is inlined whole instead.
+///
+/// Matching is syntactic, on the declared return or field type. A member with
+/// no annotation is not treated as UI-producing: inferring it would mean
+/// resolving every member of every skipped class, and the miss is the same one
+/// [_returnsUi] already accepts for top-level functions.
+bool _declaresUiMember(ClassDeclaration decl) {
+  final body = decl.body;
+  if (body is! BlockClassBody) return false;
+  for (final member in body.members) {
+    String type = '';
+    if (member is MethodDeclaration) {
+      type = member.returnType?.toSource() ?? '';
+    } else if (member is FieldDeclaration) {
+      type = member.fields.type?.toSource() ?? '';
+    }
+    if (type.isEmpty || type == 'void') continue;
+    if (_uiReturnTypes.any(type.contains)) return true;
+  }
+  return false;
+}
+
+/// Asks [shims] for a stand-in covering every name [decl] declares.
+///
+/// The whole declared surface is requested, unlike the third-party path: this
+/// call site knows only that a declaration was reached, never which of its
+/// members the scope reads. Repo-local declarations are small enough for that
+/// to be the cheaper answer than threading member references back here.
+///
+/// A `TopLevelVariableDeclaration` is the one node that can declare several
+/// names, and each carries its own element, so it is walked rather than
+/// reduced to one.
+void _requestShims(CompilationUnitMember decl, ShimEmitter shims) {
+  if (decl is TopLevelVariableDeclaration) {
+    for (final variable in decl.variables.variables) {
+      final element = variable.declaredFragment?.element;
+      if (element != null) shims.request(element, allMembers: true);
+    }
+    return;
+  }
+  try {
+    final element = (decl as dynamic).declaredFragment?.element as Element?;
+    if (element != null) shims.request(element, allMembers: true);
+  } catch (_) {
+    // A declaration kind without a fragment cannot be shimmed; it degrades to
+    // the dangling reference it already was.
+  }
+}
+
 /// Returns true if [decl] is a function that builds UI (widgets, decorations,
 /// painters, spans, routes, etc.).
 bool _returnsUi(FunctionDeclaration decl) {
@@ -744,6 +941,7 @@ void _includeCompanionState(
       if (processedKeys.add(key)) {
         extractor.classCode +=
             '\n${Skeletonizer.skeletonize(other, unitResult)}\n';
+        extractor.emittedNames.add(other.namePart.typeName.lexeme);
       }
     }
   }

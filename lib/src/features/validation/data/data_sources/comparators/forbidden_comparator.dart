@@ -2,7 +2,7 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:spm/src/features/validation/domain/entities/validation_report.dart';
 import '../visitors/forbidden_construct_visitor.dart';
 
-/// Check 6 — the mutation may not contain constructs that break
+/// Check 6: the mutation may not contain constructs that break
 /// measurement determinism (async/await/Future/Stream/Random/
 /// DateTime.now/dart:io/network/animation).
 class ForbiddenComparator {

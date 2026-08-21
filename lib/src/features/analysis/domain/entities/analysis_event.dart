@@ -18,7 +18,8 @@ class AnalysisSummaryEvent extends AnalysisEvent {
   /// Rebuild scopes discovered, before any `--scope-types` filtering.
   final int scopesFound;
 
-  /// Discovered scopes per type (`State`, `ConsumerWidget`, `BlocBuilder`, …).
+  /// Discovered scopes per type, such as `State`, `ConsumerWidget`, and
+  /// `BlocBuilder`.
   final Map<String, int> scopesByType;
   final int keptRows;
 

@@ -108,7 +108,7 @@ class ValidationDataSourceImpl implements ValidationDataSource {
         .toList();
   }
 
-  /// Check 5 — the mutation must resolve with no ERROR diagnostics against
+  /// Check 5: the mutation must resolve with no ERROR diagnostics against
   /// the unmodified dependency file (replaces the `dart analyze` subprocess).
   Iterable<Violation> _compileViolations(ResolvedUnitResult mutation) {
     final errors = mutation.diagnostics
@@ -125,7 +125,7 @@ class ValidationDataSourceImpl implements ValidationDataSource {
     ];
   }
 
-  /// Check 7 — a real structural change is required. `toSource()`
+  /// Check 7: a real structural change is required. `toSource()`
   /// regenerates from tokens, so comment/whitespace-only edits still count
   /// as no-ops.
   Iterable<Violation> _noOpViolation(

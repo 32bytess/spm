@@ -1,6 +1,6 @@
 name: spm
 description: Unified static analysis and runtime profiling for Flutter rebuild scopes and their triggers.
-version: 0.4.0
+version: 0.5.0
 repository: https://github.com/32bytess/spm
 issue_tracker: https://github.com/32bytess/spm/issues
 documentation: https://github.com/32bytess/spm/wiki
@@ -31,6 +31,9 @@ dependencies:
 dev_dependencies:
   lints: ^6.0.0
   test: ^1.25.6
+  # Used by test/fixtures/isolation/third_party_deps.dart, which needs a real
+  # package outside `package:flutter` to exercise the isolate import gate.
+  vector_math: ^2.2.0
 
 executables:
   spm:

@@ -36,7 +36,7 @@ class Violation {
 }
 
 /// Result of validating that a mutation is a clean structural variant of
-/// its base: same imports, seeds, rendered content and workload — only the
+/// its base: same imports, seeds, rendered content and workload, with only the
 /// widget-tree structure may differ.
 class ValidationReport {
   final String basePath;
