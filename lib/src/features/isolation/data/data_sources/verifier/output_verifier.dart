@@ -7,6 +7,7 @@ import 'package:analyzer/diagnostic/diagnostic.dart';
 import 'package:analyzer/error/error.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:path/path.dart' as p;
+import 'package:spm/src/features/isolation/data/data_sources/helpers/package_config.dart';
 
 /// What analysing one isolated file found.
 class OutputVerification {
@@ -67,10 +68,12 @@ class OutputVerification {
 /// used. Shelling out to `dart analyze` would pay a fresh SDK start-up and a
 /// fresh resolution of the Flutter SDK for every batch.
 ///
-/// The only edit this makes is removing an import nothing uses. An undefined
-/// name is reported and never invented here: inventing one would bypass the
-/// widget-ness rule the shim emitters follow, and a stand-in that is not a
-/// widget where the original was moves a feature count.
+/// This reads and never writes. An undefined name is reported and never
+/// invented: inventing one would bypass the widget-ness rule the shim emitters
+/// follow, and a stand-in that is not a widget where the original was moves a
+/// feature count. Unused imports are not pruned here either; the export step
+/// downstream does that, over an AST rather than over lines, which is the only
+/// way to survive a `show` clause the formatter has wrapped.
 class OutputVerifier {
   /// Diagnostic codes that name a symbol the file failed to resolve.
   static const Set<String> _unresolvedNameCodes = {
@@ -84,7 +87,6 @@ class OutputVerifier {
     'not_a_type',
   };
 
-  static const String _unusedImport = 'unused_import';
   static const String _uriDoesNotExist = 'uri_does_not_exist';
 
   /// Analyses every `.dart` file under [outputDir], keyed by absolute path.
@@ -92,11 +94,18 @@ class OutputVerifier {
   /// [sourceDirectories] are the projects the scopes came from; the first one
   /// carrying a package config lends it to the output, so that
   /// `package:flutter` resolves the same way it did during extraction.
+  ///
+  /// [only] narrows the run to the files it names, for the second pass that
+  /// re-reads whichever scopes were rewritten. Analysing the whole directory
+  /// again to learn about eight files is most of the cost of the command.
   Future<Map<String, OutputVerification>> verify({
     required String outputDir,
     required List<String> sourceDirectories,
+    List<String>? only,
   }) async {
-    final files = _dartFilesIn(outputDir);
+    final files = only == null
+        ? _dartFilesIn(outputDir)
+        : (only.toList()..sort());
     if (files.isEmpty) return const {};
 
     if (!_prepareOutputPackage(outputDir, sourceDirectories)) {
@@ -111,26 +120,31 @@ class OutputVerifier {
     final results = <String, OutputVerification>{};
     for (final file in files) {
       final context = collection.contextFor(file);
-      var diagnostics = await _diagnosticsFor(context, file);
-
-      if (_pruneUnusedImports(file, diagnostics)) {
-        // The file changed under the context, so its old result is stale.
-        context.changeFile(file);
-        await context.applyPendingFileChanges();
-        diagnostics = await _diagnosticsFor(context, file);
-      }
-
-      results[file] = _summarise(file, diagnostics);
+      final diagnostics = await _diagnosticsFor(context, file);
+      results[file] = diagnostics == null
+          ? OutputVerification.unverified
+          : _summarise(file, diagnostics);
     }
     return results;
   }
 
-  Future<List<Diagnostic>> _diagnosticsFor(dynamic context, String file) async {
+  /// The diagnostics for [file], or null when the analyzer could not produce any.
+  ///
+  /// Null rather than an empty list. An empty list means "analysed, and found
+  /// nothing", which is the definition of a clean file, and anything reading
+  /// `errorCount` back off the mapping row cannot tell the two apart. Returning
+  /// it for a file that never analysed passes the file off as clean on the
+  /// strength of a swallowed exception, which is the one thing the unverified
+  /// and clean split in [OutputVerification] exists to prevent.
+  Future<List<Diagnostic>?> _diagnosticsFor(
+    dynamic context,
+    String file,
+  ) async {
     try {
       final result = await context.currentSession.getErrors(file);
       if (result is ErrorsResult) return result.diagnostics;
     } catch (_) {}
-    return const [];
+    return null;
   }
 
   OutputVerification _summarise(String file, List<Diagnostic> diagnostics) {
@@ -180,49 +194,6 @@ class OutputVerifier {
     );
   }
 
-  /// Removes the import lines nothing in [file] uses. Returns whether the file
-  /// was rewritten.
-  ///
-  /// Line-based, because the transplant writes one directive per line and the
-  /// formatter has already run. An unused import cannot be load-bearing, so
-  /// dropping it can only reduce the diagnostic count.
-  bool _pruneUnusedImports(String file, List<Diagnostic> diagnostics) {
-    final offsets = [
-      for (final diagnostic in diagnostics)
-        if (diagnostic.diagnosticCode.lowerCaseName == _unusedImport)
-          diagnostic.offset,
-    ];
-    if (offsets.isEmpty) return false;
-
-    final content = File(file).readAsStringSync();
-    final doomed = <int>{};
-    for (final offset in offsets) {
-      final line = _lineIndexOf(content, offset);
-      if (line != null) doomed.add(line);
-    }
-    if (doomed.isEmpty) return false;
-
-    final lines = const LineSplitter().convert(content);
-    final kept = [
-      for (var i = 0; i < lines.length; i++)
-        if (!doomed.contains(i) || !lines[i].trimLeft().startsWith('import '))
-          lines[i],
-    ];
-    if (kept.length == lines.length) return false;
-
-    File(file).writeAsStringSync('${kept.join('\n')}\n');
-    return true;
-  }
-
-  static int? _lineIndexOf(String content, int offset) {
-    if (offset < 0 || offset > content.length) return null;
-    var line = 0;
-    for (var i = 0; i < offset; i++) {
-      if (content.codeUnitAt(i) == 0x0a) line++;
-    }
-    return line;
-  }
-
   List<String> _dartFilesIn(String outputDir) {
     final dir = Directory(outputDir);
     if (!dir.existsSync()) return const [];
@@ -245,7 +216,7 @@ class OutputVerifier {
 
     if (!target.existsSync()) {
       final source = sourceDirectories
-          .map(_packageConfigAbove)
+          .map(packageConfigAbove)
           .whereType<File>()
           .firstOrNull;
       if (source == null) return false;
@@ -271,25 +242,6 @@ class OutputVerifier {
       }
     }
     return true;
-  }
-
-  /// The nearest `.dart_tool/package_config.json` at or above [dir].
-  ///
-  /// The analyzer finds a project's config by walking up from the file it is
-  /// analysing, so a source directory pointing at a subfolder of a package
-  /// resolves perfectly well without holding a config of its own. Looking only
-  /// in the directory itself made the verifier skip exactly those runs.
-  static File? _packageConfigAbove(String dir) {
-    var current = p.normalize(p.absolute(dir));
-    while (true) {
-      final candidate = File(
-        p.join(current, '.dart_tool', 'package_config.json'),
-      );
-      if (candidate.existsSync()) return candidate;
-      final parent = p.dirname(current);
-      if (parent == current) return null;
-      current = parent;
-    }
   }
 
   /// Rewrites every `rootUri` in [source] to an absolute URI.

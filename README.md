@@ -17,11 +17,10 @@ schemas, metric definitions, and architecture notes. The package is published on
 
 ## Project status
 
-SPM began as tooling for a research dataset that pairs static build-tree metrics with profile-mode
-`buildSpan` measurements. For 1.0.0, the goal is to use those static metrics to screen a UI change
-without running or profiling the app. The binary result will indicate whether UI-thread frame build
-duration is stable or faster (`0`) or slower (`1`). This classifier is not available in the current
-release.
+SPM pairs static build-tree metrics with profile-mode `buildSpan` measurements. For 1.0.0, the goal
+is to use those static metrics to screen a UI change without running or profiling the app. The
+binary result will indicate whether UI-thread frame build duration is stable or faster (`0`) or
+slower (`1`). This classifier is not available in the current release.
 
 ## Install
 
@@ -63,9 +62,6 @@ lib/src/     internal implementation
 test/        tests and fixtures
 wiki/        separate Git repository for the project wiki
 ```
-
-The companion `benchmark_container` repository contains the benchmark harness, sample corpus,
-measured datasets, and modeling scripts used with SPM.
 
 ## Contributing
 

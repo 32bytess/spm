@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:vector_math/vector_math_64.dart' show Vector3;
 import 'deep_deps.dart';
 
 // Direct StatelessWidget child. References DeepWidget (level 2)
@@ -17,8 +18,14 @@ class ExternalStateful extends StatefulWidget {
 }
 
 class _ExternalStatefulState extends State<ExternalStateful> {
+  // A companion `State` is where a StatefulWidget keeps everything it depends
+  // on, and this one is reached across a file boundary. The transplant used to
+  // copy this class and never visit it, so `Vector3` arrived as a name nothing
+  // declared -- and an undefined name is a file `spm analyze` skips whole.
+  final Vector3 _spin = Vector3(1, 2, 3);
+
   @override
-  Widget build(BuildContext context) => const Text('External stateful');
+  Widget build(BuildContext context) => Text('External stateful ${_spin.x}');
 }
 
 // Widget extending a custom base (not directly a Flutter widget type)

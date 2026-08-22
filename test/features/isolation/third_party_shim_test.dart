@@ -7,13 +7,17 @@ import 'package:test/test.dart';
 
 import 'utils/temp_project.dart';
 
-/// Exercises the third-party half of the shim policy end to end.
+/// Exercises `--no-inline-third-party`, which is the shim policy this feature
+/// used to apply unconditionally.
 ///
 /// The rest of the isolation fixtures live inside this package, so every symbol
 /// they reach is either project-local or `package:flutter`. Neither reaches the
 /// import gate in `dependency_extractor_visitor.dart`, which is where a
 /// genuinely third-party name is dropped. This suite builds a throwaway project
 /// with a real `package:` dependency outside it so that gate actually fires.
+///
+/// Every assertion here is the flag's contract, not the default's. What the
+/// default does with the same project is `third_party_inline_test.dart`.
 ///
 /// The scope is written at run time rather than checked in, for the same reason
 /// as the legacy-syntax suite: a checked-in file importing `package:ui_kit`
@@ -64,7 +68,11 @@ void main() {
     outputDir = Directory.systemTemp.createTempSync('spm_third_party_out').path;
 
     final events = await IsolationDataSourceImpl()
-        .isolate(directories: [project.path], outputDir: outputDir)
+        .isolate(
+          directories: [project.path],
+          outputDir: outputDir,
+          inlineThirdParty: false,
+        )
         .toList();
     summary = events.last as IsolationSummaryEvent;
 
@@ -96,9 +104,9 @@ void main() {
   });
 
   test('a third-party value object gains no Widget supertype', () {
-    // The other direction of the same mistake. fl_chart's FlSpot is the real
-    // case: it is never in the tree, and giving it a Widget supertype would
-    // invent widgets that were never built.
+    // The other direction of the same mistake. A charting package's data point
+    // is the recurring case: it is never in the tree, and giving it a Widget
+    // supertype would invent widgets that were never built.
     expect(isolated, contains('class FancySpec'));
     expect(isolated, isNot(contains('class FancySpec extends')));
   });
@@ -112,13 +120,19 @@ void main() {
   });
 
   test('a shimmed widget carries no build body of its own', () {
-    // Stated as a limitation rather than a goal: analyzing the original
-    // project walks `FancyButton.build` and counts the `Text` inside it. A shim
-    // cannot, so an isolated scope using a third-party widget reports a smaller
-    // tree than the same scope measured in place. The assertion pins the
-    // behaviour so the difference stays visible.
+    // What the flag buys and what it costs, in one assertion. `FancyButton`
+    // really builds a `FancyRow`, and a file that says `SizedBox.shrink()` is
+    // describing a tree the app never built. That is the reason the flag is
+    // not the default. What it is not is a fidelity gap against `analyze`,
+    // which cannot reach a pub-cache library either way.
     expect(isolated, contains('const SizedBox.shrink()'));
-    expect(isolated, isNot(contains('Text(label)')));
+    expect(isolated, isNot(contains('FancyRow(label: label)')));
+  });
+
+  test('the flag reaches no further than the third-party gate', () {
+    // Nothing was inlined, so nothing is counted. A row carrying the field
+    // would mean the flag was read and then ignored somewhere downstream.
+    expect(isolated, isNot(contains('class FancyRow')));
   });
 
   test('a small type comes across whole', () {

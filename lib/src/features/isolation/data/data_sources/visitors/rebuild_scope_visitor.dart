@@ -45,6 +45,9 @@ class RebuildScopeVisitor extends RecursiveAstVisitor<void> {
 
     // Supported builder widgets that trigger rebuilds
     if (AppConstants.builderScopeWidgets.contains(typeName)) {
+      // Null for a tear-off or a variable reference. Transplanting one produced
+      // `return _buildRow;`, a function where a `Widget` belongs, for a scope
+      // `analyze` does not report either.
       final builderArg = findBuilderArgument(node, typeName);
 
       if (builderArg != null) {

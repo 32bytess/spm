@@ -9,8 +9,11 @@ import 'package:spm/src/features/isolation/data/data_sources/emitters/import_col
 import 'package:spm/src/features/isolation/data/data_sources/emitters/shim_emitter.dart';
 import 'package:spm/src/features/isolation/data/data_sources/emitters/synthetic_shim_emitter.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/declaration_names.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/flutter_namespace.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/inline_budget.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonizer.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/ui_surface.dart';
 
 /// An AST visitor that extracts transitive dependencies of a rebuild scope.
 ///
@@ -56,8 +59,14 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
   /// leaves an undefined widget behind, and an undefined widget is worse than a
   /// missing one: `_aggregateChildMetrics` skips the whole subtree, so the row
   /// is wrong rather than absent.
-  final List<({String filePath, String name, Element element})> crossFileRefs =
-      [];
+  ///
+  /// `member` and `fullSurface` describe the stand-in to fall back to when the
+  /// declaration cannot be carried after all. A repo-local reference asks for
+  /// the whole declared surface, having never seen which members the scope
+  /// reads; a third-party one asks for the member it actually reached, because
+  /// rendering everything is what `ShimEmitter._fullSurfaceLimit` exists to
+  /// prevent.
+  final List<CrossFileRef> crossFileRefs = [];
 
   /// The analysis session, used to convert `package:` URIs to file paths.
   final AnalysisSession? _session;
@@ -73,6 +82,21 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
   /// Optional on the same terms as [shims].
   final SyntheticShimEmitter? synthetics;
 
+  /// Whether a third-party declaration that can produce UI is carried into the
+  /// isolated file rather than stood in for.
+  ///
+  /// On by default: a stand-in widget has an empty `build`, so an isolated file
+  /// full of them describes a tree the app never built. Off reproduces the
+  /// output this feature replaced.
+  final bool inlineThirdParty;
+
+  /// How much third-party source this transplant may still carry.
+  final InlineBudget budget;
+
+  /// The names `package:flutter/material.dart` already puts in scope, which a
+  /// third-party declaration must not be inlined under.
+  final FlutterNamespace flutterNames;
+
   DependencyExtractorVisitor(
     this.originResult,
     this.enclosingClass,
@@ -82,7 +106,11 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     this.shims,
     this.synthetics,
     Set<String>? emittedNames,
+    this.inlineThirdParty = true,
+    InlineBudget? budget,
+    this.flutterNames = FlutterNamespace.empty,
   }) : _session = session,
+       budget = budget ?? InlineBudget(),
        emittedNames = emittedNames ?? <String>{};
 
   /// Returns true if the [filePath] belongs to the local project (not a package or SDK).
@@ -91,32 +119,38 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     return p.isWithin(root, filePath) || p.equals(root, filePath);
   }
 
-  /// Returns true if [element]'s library is provided by [importedLib], either
-  /// directly or through any depth of re-exports.
+  /// Whether [importedLib] actually provides [name] to whoever imports it.
   ///
-  /// The walk used to stop after one hop, which is shallower than real
-  /// libraries are: `package:flutter/material.dart` re-exports `widgets.dart`,
-  /// which re-exports `foundation.dart`. A symbol two hops down failed to match
-  /// its own directive and fell to the URI-only fallback, which is the path
-  /// that used to lose the prefix.
-  static bool _isFromLibrary(Element element, dynamic importedLib) {
+  /// Asked of the export NAMESPACE, not of the export graph. Walking
+  /// `exportedLibraries` was the wrong question, and the analyzer says so in its
+  /// own doc comment on that getter: "it ignores hide and show clauses", with a
+  /// standing TODO to remove it from the public API. Flutter is built out of
+  /// exactly those clauses. `widgets.dart` re-exports foundation as
+  /// `show Brightness, UniqueKey`, so the walk answered yes for every foundation
+  /// symbol reached from a file that imports only `material.dart`. The import was
+  /// recorded as found, the URI fallback that would have added
+  /// `package:flutter/foundation.dart` never ran, and the transplant shipped an
+  /// undefined name. `DiagnosticPropertiesBuilder` was the loudest instance;
+  /// `Diagnosticable`, `kDebugMode` and `compute` are the same shape.
+  ///
+  /// A library's export namespace already covers its own public declarations as
+  /// well as its filtered re-exports, so one lookup answers both cases.
+  static bool _providesName(dynamic importedLib, String name) {
+    if (importedLib == null || name.isEmpty) return false;
     try {
-      // Use identifier (canonical URI) to compare libraries; avoid .source
-      // which was removed from LibraryElement in analyzer ≥ 10.
-      final dynamic elementLib = element.library;
-      final elementUri = elementLib?.identifier as String?;
-      if (elementUri == null || importedLib == null) return false;
-
-      final seen = <String>{};
-      final pending = <dynamic>[importedLib];
-      while (pending.isNotEmpty) {
-        final dynamic library = pending.removeLast();
-        final uri = library?.identifier as String?;
-        if (uri == null || !seen.add(uri)) continue;
-        if (uri == elementUri) return true;
-        for (final exported
-            in (library?.exportedLibraries as Iterable? ?? const [])) {
-          pending.add(exported);
+      final dynamic namespace = importedLib.exportNamespace;
+      if (namespace == null) return false;
+      // `get2` is the analyzer 13 spelling. The `2` suffixes are transitional and
+      // this package allows up to analyzer 15, so both are tried, as everywhere
+      // else in this file. The `name=` form is how a setter is keyed.
+      for (final candidate in [name, '$name=']) {
+        for (final read in [
+          () => namespace.get2(candidate),
+          () => namespace.get(candidate),
+        ]) {
+          try {
+            if (read() is Element) return true;
+          } catch (_) {}
         }
       }
     } catch (_) {}
@@ -306,99 +340,158 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     // shim still has to carry.
     final bool alreadySeen = !_processedKeys.add(key);
 
-    if (!isProjectLocal(filePath)) {
-      final uri =
-          target?.library?.identifier ?? element.library?.identifier ?? '';
+    final uri =
+        target?.library?.identifier ?? element.library?.identifier ?? '';
 
-      // Only collect imports for the Flutter SDK and Dart SDK.
-      // Third-party packages (flutter_bloc, provider, get, etc.) are excluded
-      // because we focus on the widget tree structure, not external state managers.
-      if (!isSdkLibrary(uri)) {
-        // Importing the package back is not an option, since preventing that
-        // is what this gate is for, but dropping the name silently leaves the
-        // isolated file unanalyzable. A declaration-only stand-in resolves it
-        // while mirroring whether it was a widget, which is the one property
-        // the feature extractor reads off the supertype chain.
-        shims?.request(target ?? element, member: member);
-        return;
-      }
+    // The SDK is the one thing that gets imported rather than carried, so it is
+    // asked first, and it is asked of the library URI rather than of the file's
+    // location. A sub-visitor may be walking a unit inside the pub cache, where
+    // "project-local" is false for the very file being read.
+    if (isSdkLibrary(uri)) {
       if (alreadySeen) return;
+      _collectImport(name, uri, node);
+      return;
+    }
 
-      // Find the matching import directives in the source file so that the
-      // exact URI and any `as` / `show` / `hide` clauses are preserved. Every
-      // match is taken rather than the first: a file that imports one library
-      // both plainly and under a prefix needs both directives, since the
-      // transplanted body may write either form.
-      bool found = false;
-      try {
-        for (final directive in originResult.unit.directives) {
-          if (directive is! ImportDirective) continue;
-          try {
-            // `libraryImport` is where analyzer ≥ 13 keeps this. The older
-            // `element` / `element2` spellings are kept as a fallback, but they
-            // throw on the current analyzer, which silently made this whole
-            // branch dead: every import fell through to the URI-only fallback,
-            // and with it every `show`, `hide` and `as` clause.
-            final dynamic d = directive;
-            Object? importedLib;
-            try {
-              importedLib = directive.libraryImport?.importedLibrary;
-            } catch (_) {}
-            if (importedLib == null) {
-              try {
-                importedLib = d.element?.importedLibrary;
-              } catch (_) {}
-            }
-            if (importedLib == null) {
-              try {
-                importedLib = d.element2?.importedLibrary;
-              } catch (_) {}
-            }
-            if (importedLib != null && _isFromLibrary(element, importedLib)) {
-              imports.addDirective(directive);
-              found = true;
-            }
-          } catch (_) {}
-        }
-      } catch (_) {}
-
-      if (!found) {
-        // Fallback: construct an import from the library's canonical URI, under
-        // whatever prefix the reference itself was written with.
-        try {
-          if (uri.isNotEmpty &&
-              uri != 'dart:core' &&
-              !uri.startsWith('file:')) {
-            var importUri = uri;
-            if (uri.startsWith('package:flutter/src/')) {
-              final parts = uri.split('/');
-              if (parts.length > 2) {
-                importUri = 'package:flutter/${parts[2]}.dart';
-              }
-            }
-            imports.add(importUri, prefix: _prefixAtUseSite(node));
-          }
-        } catch (_) {}
+    // The declaring file is the one being walked, so the declaration is already
+    // in hand. Ahead of the third-party test on purpose: an inlined package
+    // unit gets a sub-visitor of its own, and the private classes such source
+    // routinely names are found here or nowhere.
+    if (filePath == originResult.path) {
+      if (alreadySeen) return;
+      // A lookup that finds nothing used to end here, with the name marked
+      // processed so no later reference would retry it. A stand-in keeps the
+      // file analysable, and keeps a widget reading as a widget.
+      //
+      // The whole surface is asked for only when the unit is the project's. A
+      // package unit reaches here too now, and its declarations are the ones
+      // `ShimEmitter._fullSurfaceLimit` was written about.
+      if (!_extractSameFile(name)) {
+        shims?.request(
+          target ?? element,
+          member: member,
+          allMembers: _originIsProjectLocal,
+        );
       }
       return;
     }
 
-    if (alreadySeen) return;
-
-    if (filePath == originResult.path) {
-      // A lookup that finds nothing used to end here, with the name marked
-      // processed so no later reference would retry it. A stand-in keeps the
-      // file analysable, and keeps a widget reading as a widget.
-      if (!_extractSameFile(name)) {
-        shims?.request(target ?? element, member: member, allMembers: true);
-      }
-    } else {
+    if (isProjectLocal(filePath)) {
+      if (alreadySeen) return;
       crossFileRefs.add((
         filePath: filePath,
         name: name,
         element: target ?? element,
+        member: null,
+        fullSurface: true,
       ));
+      return;
     }
+
+    // Third party. Importing the package back is not an option, since
+    // preventing that is what this gate is for, so the choice is between
+    // carrying the declaration and standing it in, and a widget is carried.
+    //
+    // What that buys is a real reproduction of the scope. A stand-in widget
+    // has an empty `build`, so the isolated file describes a tree the app
+    // never built and cannot be run or read as the scope it came from.
+    //
+    // What it does NOT buy, contrary to the obvious guess, is agreement with
+    // `spm analyze` on the original project. `BuildMetricsVisitor` does record
+    // a non-SDK widget as a custom child, but `TreeExtractor._indexLibrary`
+    // then asks `AnalysisContextCollection.contextFor` for the file, and that
+    // throws `StateError` for anything under the pub cache, since the
+    // collection is rooted at the project. The child is dropped and its whole
+    // subtree with it. So an isolated row that carries a package's widgets
+    // counts MORE than the in-place row for the same scope, not less. Worth
+    // stating rather than discovering: the two numbers are not comparable
+    // across this boundary in either direction.
+    if (inlineThirdParty &&
+        !budget.exhausted &&
+        !flutterNames.contains(name) &&
+        elementProducesUi(target ?? element)) {
+      if (alreadySeen) return;
+      crossFileRefs.add((
+        filePath: filePath,
+        name: name,
+        element: target ?? element,
+        member: member,
+        fullSurface: false,
+      ));
+      return;
+    }
+
+    // Everything that builds nothing: value objects, controllers, services, and
+    // any UI the budget or a name clash with material ruled out.
+    // A declaration-only stand-in resolves the name while mirroring whether it
+    // was a widget, which is the one property the feature extractor reads off
+    // the supertype chain. Deliberately reached even when [alreadySeen], since
+    // every later reference names a member the shim still has to carry.
+    shims?.request(target ?? element, member: member);
+  }
+
+  /// Records the import that makes [name] resolve, for an SDK library.
+  ///
+  /// [uri] is the library's canonical URI and [node] the reference that reached
+  /// it, read only for the prefix it was written with.
+  void _collectImport(String name, String uri, AstNode? node) {
+    // Find the matching import directives in the source file so that the
+    // exact URI and any `as` / `show` / `hide` clauses are preserved. Every
+    // match is taken rather than the first: a file that imports one library
+    // both plainly and under a prefix needs both directives, since the
+    // transplanted body may write either form.
+    bool found = false;
+    try {
+      for (final directive in originResult.unit.directives) {
+        if (directive is! ImportDirective) continue;
+        try {
+          // `libraryImport` is where analyzer >= 13 keeps this. The older
+          // `element` / `element2` spellings are kept as a fallback, but they
+          // throw on the current analyzer, which silently made this whole
+          // branch dead: every import fell through to the URI-only fallback,
+          // and with it every `show`, `hide` and `as` clause.
+          final dynamic d = directive;
+          Object? importedLib;
+          try {
+            importedLib = directive.libraryImport?.importedLibrary;
+          } catch (_) {}
+          if (importedLib == null) {
+            try {
+              importedLib = d.element?.importedLibrary;
+            } catch (_) {}
+          }
+          if (importedLib == null) {
+            try {
+              importedLib = d.element2?.importedLibrary;
+            } catch (_) {}
+          }
+          // `name`, not `element.name`: for a constructor reference the
+          // name written in the source is the class, and the constructor
+          // itself is not in any export namespace.
+          if (_providesName(importedLib, name)) {
+            imports.addDirective(directive);
+            found = true;
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    if (found) return;
+
+    // Fallback: construct an import from the library's canonical URI, under
+    // whatever prefix the reference itself was written with.
+    try {
+      if (uri.isNotEmpty && uri != 'dart:core' && !uri.startsWith('file:')) {
+        var importUri = uri;
+        if (uri.startsWith('package:flutter/src/')) {
+          final parts = uri.split('/');
+          if (parts.length > 2) {
+            importUri = 'package:flutter/${parts[2]}.dart';
+          }
+        }
+        imports.add(importUri, prefix: _prefixAtUseSite(node));
+      }
+    } catch (_) {}
   }
 
   /// Extracts the source code for a dependency located in the same file.
@@ -408,8 +501,8 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
   bool _extractSameFile(String name) {
     if (name == 'build') return true;
     // `State` already supplies `context`. Some classes declare a field of the
-    // same name (nMobile's `BottomDialog` does); copying it across shadows the
-    // real one and the isolated file stops compiling.
+    // same name, and copying it across shadows the real one, after which the
+    // isolated file stops compiling.
     if (name == 'context') return true;
 
     if (enclosingClass != null) {
@@ -432,15 +525,38 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     }
 
     for (final decl in originResult.unit.declarations) {
-      if (declaredNames(decl).contains(name)) {
-        classCode += '\n${Skeletonizer.skeletonize(decl, originResult)}\n';
+      if (!declaredNames(decl).contains(name)) continue;
+
+      // "Within a file take everything" was written about project files, where
+      // the rule costs one repository file at a time. A package unit reaches
+      // here as well now, and two of its properties are not the project's: it
+      // may be very large, and it may declare a name Flutter also exports, in
+      // which case carrying a body for that name puts widgets under every use
+      // of it in the transplanted code. Both fall back to the stand-in the
+      // caller emits when this returns false.
+      if (!_originIsProjectLocal) {
+        if (flutterNames.contains(name)) return false;
+        final source = Skeletonizer.skeletonize(decl, originResult);
+        if (!budget.take(source.length)) return false;
+        classCode += '\n$source\n';
         emittedNames.addAll(declaredNames(decl));
         decl.accept(this);
         return true;
       }
+
+      classCode += '\n${Skeletonizer.skeletonize(decl, originResult)}\n';
+      emittedNames.addAll(declaredNames(decl));
+      decl.accept(this);
+      return true;
     }
     return false;
   }
+
+  /// Whether the unit this visitor walks belongs to the project.
+  ///
+  /// False for the sub-visitors that walk an inlined package unit, which is
+  /// what the same-file rules above key on.
+  late final bool _originIsProjectLocal = isProjectLocal(originResult.path);
 
   /// Safely extracts the [Element] from an AST node and passes it to [_handleElement].
   void _safeHandle(dynamic node) {
@@ -837,3 +953,15 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     super.visitInstanceCreationExpression(node);
   }
 }
+
+/// A reference the transplant has to resolve in another file.
+///
+/// See [DependencyExtractorVisitor.crossFileRefs] for what `member` and
+/// `fullSurface` are for.
+typedef CrossFileRef = ({
+  String filePath,
+  String name,
+  Element element,
+  Element? member,
+  bool fullSurface,
+});

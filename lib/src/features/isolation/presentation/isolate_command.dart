@@ -32,6 +32,18 @@ class IsolateCommand extends Command<int> {
             'Output JSONL file for the mapping (original path -> isolated path).',
       )
       ..addFlag(
+        'inline-third-party',
+        help:
+            'Carry a third-party widget\'s own tree into the isolated file '
+            'instead of standing it in. On by default: a stand-in widget has '
+            'an empty build, so the isolated file otherwise describes a tree '
+            'the app never built. Note that `analyze` cannot reach a package '
+            'widget\'s body in place, so a carried row counts more than the '
+            'in-place row for the same scope. Pass --no-inline-third-party for '
+            'smaller output and shorter runs.',
+        defaultsTo: true,
+      )
+      ..addFlag(
         'verbose',
         abbr: 'v',
         help: 'Enable verbose output.',
@@ -55,12 +67,18 @@ class IsolateCommand extends Command<int> {
     );
     final jsonlPath = argResults!['jsonl'] as String?;
     final verbose = argResults!['verbose'] as bool;
+    final inlineThirdParty = argResults!['inline-third-party'] as bool;
 
     if (verbose) {
       SpmLogger.logMessage('Starting isolation...');
       SpmLogger.logMessage('Repositories: ${repoDirs.join(', ')}');
       SpmLogger.logMessage('Output Directory: $outputDir');
       if (jsonlPath != null) SpmLogger.logMessage('Mapping JSONL: $jsonlPath');
+      SpmLogger.logMessage(
+        inlineThirdParty
+            ? 'Third-party widget trees: carried'
+            : 'Third-party widget trees: stood in for',
+      );
     }
 
     // Invoke the use case through the service locator
@@ -68,6 +86,7 @@ class IsolateCommand extends Command<int> {
       directories: repoDirs,
       outputDir: outputDir,
       jsonlPath: jsonlPath,
+      inlineThirdParty: inlineThirdParty,
     );
 
     await for (final event in stream) {
