@@ -59,11 +59,13 @@ class RebuildScopeAnalysisVisitor extends RecursiveAstVisitor<void> {
     final typeName = unprefixedTypeName(node);
 
     if (AppConstants.builderScopeWidgets.contains(typeName)) {
-      final builderArg = findBuilderArgument(node, typeName);
-
       // Only an inline closure has a body to walk; a tear-off or a variable
       // reference is measured wherever the function is declared.
-      if (builderArg is FunctionExpression) {
+      // `findBuilderArgument` applies that rule, for this command and for
+      // `isolate` alike.
+      final builderArg = findBuilderArgument(node, typeName);
+
+      if (builderArg != null) {
         final scopeName = '${typeName}_builder';
         instances.add((
           instanceId: _instanceId(typeName, scopeName),

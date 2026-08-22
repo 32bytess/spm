@@ -9,5 +9,6 @@ abstract class IsolationRepository {
     required List<String> directories,
     required String outputDir,
     String? jsonlPath,
+    bool inlineThirdParty,
   });
 }

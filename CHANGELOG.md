@@ -1,11 +1,147 @@
 # Changelog
 
+## 0.6.0
+
+Everything since 0.5.2. Two changes carry the release, and both are about `isolate` writing a file
+that describes the code it came from. A transplanted StatefulWidget now brings its `State`'s
+dependencies with it, and a third-party widget now arrives with its own tree instead of an empty
+stand-in. Alongside them, several things that reported success without having earned it now say so
+instead.
+
+Output from 0.6.0 cannot be pooled with 0.5.2's: the same scope produces a different file and, where
+a package widget is involved, different metrics.
+
+### Added
+
+- `--inline-third-party`, on by default. `--no-inline-third-party` stands every third-party symbol
+  in, which is what `isolate` did up to 0.5.2.
+- Three mapping JSONL fields, all omitted unless they apply: `inlinedThirdPartyDeclarations` counts
+  the third-party declarations carried into a file; `thirdPartyInlineTruncated` marks a scope that
+  reached the per-scope budget; `thirdPartyInlineReverted` marks a scope where carrying the code
+  analysed worse than standing it in, so the stood-in version was kept. The last two both say the
+  file describes a smaller tree than the code it came from builds.
+- `helpers/ui_surface.dart` holds the predicate that decides whether a declaration can produce UI,
+  in both an AST form and an element-model form, so the transplant's inline gate and the dependency
+  visitor's gate cannot drift apart. `helpers/inline_budget.dart` and
+  `helpers/flutter_namespace.dart` hold the two limits described below.
+
+### Changed
+
+- The dependency gate now asks "is this the SDK" rather than "is this project-local". The SDK is
+  imported, anything that can produce UI is carried as source whether it is repo-local or
+  third-party, and everything else becomes a declaration-only stand-in. A third-party
+  `StatefulWidget` arrives with its companion `State`, which is the half that matters, since that is
+  where the build body lives. A stood-in widget has an empty `build`, so a file full of them
+  describes a tree the app never built and cannot be read or run as the scope it came from.
+- Carrying third-party source is bounded, unlike the repo-local kind, at 200 declarations or 200,000
+  characters per scope. A repo-local closure is bounded by the repository already; a third-party one
+  is not, and a scope holding a single state-management builder reaches a widget from which the
+  crawl walks into the package's own machinery.
+- Carrying is undone per scope when it does not pay. After the output is verified, any scope that
+  carried third-party source and still does not analyse is extracted a second time with that source
+  stood in for, and whichever version has fewer errors is kept. A package widget generic over a type
+  bounded by one of the package's own classes is the shape that needs this: carrying the widget
+  brings its real bound along, and the repo-local class that satisfies that bound in the application
+  is a stand-in here with no supertype at all, so a file that type-checked against a stand-in's
+  `dynamic` stops type-checking. Rather than keep a list of packages that behave this way, both
+  answers are analysed and the better one wins, which makes the guarantee exact: no scope ends up
+  with more errors than `--no-inline-third-party` would have given it.
+- A third-party declaration whose name `package:flutter/material.dart` also exports is stood in for
+  rather than carried. A local declaration shadows the import either way, but an empty stand-in
+  named `Card` only costs the subtree under each `Card(...)`, where a carried one puts a body under
+  every use of the name, including the uses that meant Flutter's.
+- The same-file rule, "within a file take everything", was written about project files and now
+  applies to package units as well, so it takes the budget and the material-name check with it.
+  Without that, a package's own declarations entered through a door the third-party gate does not
+  watch.
+- `SvgPicture` and `CachedNetworkImage` are no longer in the set of image constructions rewritten to
+  `Image.asset('assets/placeholder.png')`. They are widgets from packages, and substituting one
+  widget for another was hiding whatever those packages build. The rewrite now requires an SDK-owned
+  element, so Flutter's own `Image`, `AssetImage`, `NetworkImage`, `FileImage`, `MemoryImage`,
+  `DecorationImage`, `FadeInImage` and `RawImage` still take the placeholder, because an isolated
+  file has no assets directory and no network.
+- Resolving a dependency's unit is guarded. A third-party reference points at a file outside the
+  project rather than inside it, and an unreadable one now costs a stand-in instead of the whole
+  scope.
+- Unused imports are no longer pruned from the output. The pruner was line based, and `dart format`
+  wraps a long `show` clause across lines, so pruning one could leave the rest of the clause behind
+  and turn a warning into a parse error. Removing it also removes the re-analysis round trip that
+  was the most likely way to reach the verifier's swallowed-diagnostics bug listed under Fixed. An
+  unused import is a warning, never an error, so it does not stop `analyze` from reading the file;
+  prune it downstream over an AST if the output needs to be clean of them.
+- The mapping JSONL ends every line, `analyze`'s output always did.
+- Passing the same directory twice no longer isolates every scope in it twice. The per-input
+  directory filter it replaces could not admit a context twice for distinct inputs anyway: the
+  analyzer roots each context at an included path and merges overlapping ones.
+- The walk up to the nearest `.dart_tool/package_config.json` is now one helper,
+  `helpers/package_config.dart`, shared by the extractor and the verifier instead of living only in
+  the verifier.
+- The isolation tests share one transplant run per file rather than repeating it for every test.
+
+### Fixed
+
+- The companion `State` of an inlined StatefulWidget was copied and never visited, so nothing it
+  referenced reached the dependency crawl: no stand-in, no import, no cross-file reference. A
+  `State` body is where a StatefulWidget keeps everything it depends on, which is what made this
+  expensive: a widget whose data types are named only inside its `State` had the code that names
+  them carried across and a declaration for none of them. The companion is visited under its own
+  class rather than the widget's, so a reference to one of its own methods reads as a member of the
+  class that declares it.
+- A widget stand-in carried `createState` and `debugFillProperties`, both of which only the
+  framework calls and neither of which a stand-in can honour. `createState` returns `State<T>`,
+  whose bound is `StatefulWidget`, against a stand-in deliberately collapsed to `StatelessWidget`,
+  so standing in for a stateful widget produced a bound violation on the stand-in's own signature.
+  `debugFillProperties` names `DiagnosticPropertiesBuilder`, which `package:flutter/material.dart`
+  does not export, since `widgets.dart` re-exports foundation as `show Brightness, UniqueKey`.
+- Deciding whether an import already provides a name walked the export graph, which ignores `show`
+  and `hide`. The analyzer says as much in its own doc comment on `exportedLibraries`, and Flutter
+  is built out of those clauses: `widgets.dart` re-exports foundation as
+  `show Brightness, UniqueKey`, so every foundation symbol reached from a file importing only
+  `material.dart` matched material, and the fallback that would have written the real import never
+  ran. The question is now asked of the export namespace, which is the one that honours the clauses.
+  `DiagnosticPropertiesBuilder`, `Diagnosticable`, `kDebugMode` and `compute` are all this shape.
+- A builder given a tear-off rather than an inline closure was a scope to `isolate` and not to
+  `analyze`. There is no callback body at the creation site, so the transplant fell through to its
+  expression fallback and returned the function itself where a `Widget` belongs: a file that can
+  never analyse clean, a row in the mapping, and a count in the summary, for a scope `analyze` never
+  reports. `findBuilderArgument` now returns only a `FunctionExpression`, so both commands take the
+  rule from one place.
+- The verifier reported a file it could not analyse as a file with no errors. Every failure to
+  fetch diagnostics was swallowed and became an empty diagnostic list, which is indistinguishable
+  from a clean run. It now reports `verified: false`, which is what the unverified and clean split
+  existed to express.
+- `sourceDependenciesResolved` could only ever be false once per checkout. An existing
+  `package_config.json` was taken as proof that resolution had happened, and the minimal config
+  `isolate` writes when `pub get` fails satisfies that check, so the flag fired on the run that
+  created the file and never again. Walking a repository's history, where a worktree keeps its
+  `.dart_tool` across checkouts, that is every revision after the first. A config `isolate` wrote
+  itself now counts as unresolved, and a directory with no pubspec and no config above it does too.
+  **Counts of this flag taken from output written by 0.5.2 or earlier are floors.**
+- `isolate` accepted a directory that does not exist and reported success over zero scopes. A
+  missing path resolves to a context rooted at the nearest real package above it, whose files are
+  then all filtered out, so a typo read exactly like a project with no rebuild scopes in it. An
+  input that produces no analysis context at all is now an error too.
+- The set of projects whose dependencies failed to resolve was never cleared between calls. The
+  data source is a lazy singleton, so a second `isolate()` in the same process still carried the
+  first one's verdict and marked `sourceDependenciesResolved: false` on rows from a project that
+  resolved perfectly well. Only the CLI, which runs one isolation per process, was unaffected.
+
+### Notes
+
+- Carrying a package widget does **not** make an isolated row match the in-place row, which is the
+  obvious guess and the wrong one. `BuildMetricsVisitor` does record a non-SDK widget as a custom
+  child, but `TreeExtractor` then asks `AnalysisContextCollection.contextFor` for its file, and that
+  throws for any path outside the analyzed roots, which is where a package's source sits. The child
+  is dropped and its subtree with it, so `analyze` never counted a package widget's tree in place
+  either. A row that carried one therefore counts **more** than the same scope does in place, not
+  less. Isolated and in-place numbers are not comparable across that boundary in either direction.
+
 ## 0.5.2
 
 `isolate` now analyses what it wrote before it reports success, so every run says how many of its
 files a later `spm analyze` can actually read. The fixes below all change what `isolate` writes.
 Files produced by 0.5.1 and earlier carry imports of packages that were never meant to be there and
-references to names nothing declares, so they cannot be mixed into one dataset with 0.5.2 output.
+references to names nothing declares, so they cannot be pooled with 0.5.2 output.
 
 ### Fixed
 
@@ -51,7 +187,7 @@ references to names nothing declares, so they cannot be mixed into one dataset w
   `unresolvedImports` and `unresolvedNames`. The run prints how many files analyse clean, which is
   the number that decides how much of the output `analyze` can read.
 - A row carries `sourceDependenciesResolved: false` when the project it came from had no resolvable
-  dependencies, so a corpus can exclude or re-mine those revisions instead of treating their metrics
+  dependencies, so a consumer can exclude or re-run those rows instead of treating their metrics
   as comparable. The condition is logged as an error when it happens rather than passing silently.
 - The output directory gets a `pubspec.yaml` and a `.dart_tool/package_config.json` borrowed from
   the source project, so the isolated files resolve `package:flutter` where they now sit.
@@ -69,7 +205,7 @@ references to names nothing declares, so they cannot be mixed into one dataset w
 ## 0.5.0
 
 Every fix below changes what `isolate` writes, and the first one changes the metrics `analyze`
-reads back out of it, so results from 0.4.0 and 0.5.0 cannot be compared or mixed in one dataset.
+reads back out of it, so results from 0.4.0 and 0.5.0 cannot be compared or pooled.
 
 ### Fixed
 
@@ -180,7 +316,7 @@ could be read.
 
 Six build-tree metric defects, found by checking extracted values against what the analyzed source
 actually does. Every one of them changes numbers that 0.2.0 emitted, so metrics from the two
-versions cannot be compared or mixed in one dataset.
+versions cannot be compared or pooled.
 
 - Helpers returning a collection of widgets were skipped. `List<Widget> _buildRows()` and
   `List<DropdownMenuItem<T>> _buildItems()` are widget factories, but the return type had to be a
@@ -215,9 +351,8 @@ versions cannot be compared or mixed in one dataset.
 
 ### Changed
 
-- Documented SPM's research-dataset origin and planned 1.0.0 static screening direction: classify
-  UI changes as stable or faster (`0`) or slower (`1`) from build-tree metrics without running or
-  profiling the app.
+- Documented the planned 1.0.0 static screening direction: classify UI changes as stable or faster
+  (`0`) or slower (`1`) from build-tree metrics without running or profiling the app.
 
 ### Removed
 
@@ -250,7 +385,7 @@ versions cannot be compared or mixed in one dataset.
 
 - `analyze` emits a row for each rebuild scope: `State` subclasses, `ConsumerWidget` /
   `HookConsumerWidget` classes, and the inline builder callbacks of `BlocBuilder`, `BlocSelector`,
-  `BlocConsumer`, `Consumer`, `Selector`, `Obx`, `GetX`, `GetBuilder`, and `Observer` — the same
+  `BlocConsumer`, `Consumer`, `Selector`, `Obx`, `GetX`, `GetBuilder`, and `Observer`, the same
   kinds `isolate` detects.
 - `--scope-types` / `-s` on `analyze` (repeatable) narrows the emitted kinds;
   `-s State` reproduces the previous output.

@@ -2,10 +2,24 @@ import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 
 class Skeletonizer {
   static const String placeholder = "Image.asset('assets/placeholder.png')";
 
+  /// Image constructions rewritten to [placeholder], because an isolated file
+  /// has no assets directory and no network to reach.
+  ///
+  /// SDK classes only. `SvgPicture` and `CachedNetworkImage` used to be here,
+  /// and they were the two entries that made the set say something other than
+  /// what it means: they are widgets from third-party packages, and the
+  /// transplant now carries a third-party widget's real tree rather than
+  /// replacing it. Substituting one widget for another was hiding whatever
+  /// those packages actually build.
+  ///
+  /// Under `--no-inline-third-party` they get the same declaration-only
+  /// stand-in every other third-party widget gets, which under-counts them the
+  /// same way. That is the flag's own trade-off rather than a second one.
   static final Set<String> _imageClasses = {
     'Image',
     'AssetImage',
@@ -15,8 +29,6 @@ class Skeletonizer {
     'DecorationImage',
     'FadeInImage',
     'RawImage',
-    'CachedNetworkImage',
-    'SvgPicture',
   };
 
   /// [rewriter] contributes extra edits alongside the image replacements. The
@@ -122,7 +134,29 @@ class _ReplacementCollector extends RecursiveAstVisitor<void> {
     } else if (node is MethodInvocation) {
       element = _getElement(node.methodName) ?? _getElement(node);
     }
-    return element != null && Skeletonizer._imageClasses.contains(element.name);
+    if (element == null) return false;
+    if (!Skeletonizer._imageClasses.contains(element.name)) return false;
+    // The names in the set are Flutter's, and a package is free to reuse one.
+    // Rewriting somebody else's `NetworkImage` to an asset would replace a
+    // widget tree the transplant is now able to carry.
+    return _isSdkOwned(element);
+  }
+
+  /// Whether [element] is declared by the Dart or Flutter SDK.
+  ///
+  /// An element whose library cannot be read is treated as SDK-owned, which is
+  /// how this behaved before the test existed. A project with unresolved
+  /// dependencies reaches here constantly, and the placeholder is the more
+  /// useful answer there than a construction referencing assets that are not
+  /// in the output directory.
+  bool _isSdkOwned(Element element) {
+    try {
+      final uri = element.library?.identifier;
+      if (uri == null) return true;
+      return isSdkLibrary(uri);
+    } catch (_) {
+      return true;
+    }
   }
 
   Element? _getElement(dynamic node) {

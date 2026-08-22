@@ -17,12 +17,14 @@ class IsolationRepositoryImpl implements IsolationRepository {
     required List<String> directories,
     required String outputDir,
     String? jsonlPath,
+    bool inlineThirdParty = true,
   }) async* {
     try {
       final result = dataSource.isolate(
         directories: directories,
         outputDir: outputDir,
         jsonlPath: jsonlPath,
+        inlineThirdParty: inlineThirdParty,
       );
       await for (final event in result) {
         yield Right(event);

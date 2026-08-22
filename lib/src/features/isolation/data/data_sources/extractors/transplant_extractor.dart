@@ -8,13 +8,39 @@ import 'package:spm/src/features/isolation/data/data_sources/emitters/import_col
 import 'package:spm/src/features/isolation/data/data_sources/emitters/shim_emitter.dart';
 import 'package:spm/src/features/isolation/data/data_sources/emitters/synthetic_shim_emitter.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/declaration_names.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/flutter_namespace.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/inline_budget.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonizer.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/ui_surface.dart';
 import 'package:spm/src/features/isolation/data/data_sources/sets/isolation_match_set.dart';
 import 'package:spm/src/features/isolation/data/data_sources/visitors/captured_variable_visitor.dart';
 import 'package:spm/src/features/isolation/data/data_sources/visitors/dependency_extractor_visitor.dart';
 import 'package:spm/src/features/isolation/data/data_sources/visitors/promotion_cast_rewriter.dart';
 import 'package:spm/src/features/isolation/data/data_sources/visitors/rebuild_scope_visitor.dart';
+
+/// One transplanted scope, plus what the transplant had to give up to produce it.
+///
+/// The counts are not decoration. A row whose third-party closure was truncated
+/// measures a smaller tree than one that carried it whole, and nothing reading
+/// the JSONL downstream could otherwise tell the two apart.
+class TransplantResult {
+  const TransplantResult({
+    required this.source,
+    required this.inlinedThirdPartyDeclarations,
+    required this.truncated,
+  });
+
+  /// The generated Dart file.
+  final String source;
+
+  /// How many third-party declarations were carried into it.
+  final int inlinedThirdPartyDeclarations;
+
+  /// Whether the inline budget ran out, so some third-party UI was stood in for
+  /// that would otherwise have been carried.
+  final bool truncated;
+}
 
 /// Extracts and transforms a discovered rebuild scope into a standalone [StatefulWidget].
 ///
@@ -23,17 +49,40 @@ import 'package:spm/src/features/isolation/data/data_sources/visitors/rebuild_sc
 /// context and wrapped into a new, generated widget that includes all its
 /// transitive dependencies.
 class TransplantExtractor {
+  /// [newBudget] builds the inline budget each scope is given. One per scope,
+  /// not one per run: a budget shared across scopes would let whichever scope
+  /// ran first spend the allowance for all of them, and the output would depend
+  /// on file ordering.
+  TransplantExtractor({InlineBudget Function()? newBudget})
+    : _newBudget = newBudget ?? InlineBudget.new;
+
+  final InlineBudget Function() _newBudget;
+
+  /// The names `package:flutter/material.dart` exports, resolved once and kept.
+  ///
+  /// Held on the extractor rather than looked up per scope: it is the same
+  /// answer for every scope in a run, and resolving material is not free.
+  Future<FlutterNamespace>? _flutterNames;
+
   /// Extracts the source code for [match] and returns it as a full Dart file.
   ///
   /// [result]: The analysis result of the file containing the match.
   /// [session]: The current analysis session for cross-file resolution.
-  Future<String> extract(
+  /// [inlineThirdParty]: whether a third-party declaration that can produce UI
+  /// is carried into the output rather than stood in for.
+  Future<TransplantResult> extract(
     IsolationMatch match,
     ResolvedUnitResult result,
-    AnalysisSession session,
-  ) async {
+    AnalysisSession session, {
+    bool inlineThirdParty = true,
+  }) async {
     try {
-      return await _extract(match, result, session);
+      return await _extract(
+        match,
+        result,
+        session,
+        inlineThirdParty: inlineThirdParty,
+      );
     } on IsolationException {
       rethrow;
     } catch (e, st) {
@@ -45,11 +94,16 @@ class TransplantExtractor {
   }
 
   /// Internal implementation of the extraction logic.
-  Future<String> _extract(
+  Future<TransplantResult> _extract(
     IsolationMatch match,
     ResolvedUnitResult result,
-    AnalysisSession session,
-  ) async {
+    AnalysisSession session, {
+    required bool inlineThirdParty,
+  }) async {
+    final budget = _newBudget();
+    final flutterNames = inlineThirdParty
+        ? await (_flutterNames ??= FlutterNamespace.load(session))
+        : FlutterNamespace.empty;
     final scopeNode = match.scopeNode;
     String buildBody;
     String paramFields = '';
@@ -107,6 +161,9 @@ class TransplantExtractor {
       shims: shims,
       synthetics: synthetics,
       emittedNames: emittedNames,
+      inlineThirdParty: inlineThirdParty,
+      budget: budget,
+      flutterNames: flutterNames,
     );
 
     String widgetFields = '';
@@ -324,20 +381,36 @@ class TransplantExtractor {
         .join('\n');
 
     // Recursively resolve cross-file references found by the visitor
-    final pending =
-        List<({String filePath, String name, Element element})>.from(
-          extractor.crossFileRefs,
-        );
+    final pending = List<CrossFileRef>.from(extractor.crossFileRefs);
+
+    // Stands a reference in rather than carrying it, for whichever reason the
+    // caller found. Repo-local references ask for the whole declared surface,
+    // having never seen which members the scope reads; third-party ones ask for
+    // the member they reached, since rendering everything is what
+    // `ShimEmitter._fullSurfaceLimit` exists to prevent.
+    void standIn(CrossFileRef ref) => shims.request(
+      ref.element,
+      member: ref.member,
+      allMembers: ref.fullSurface,
+    );
 
     while (pending.isNotEmpty) {
       final ref = pending.removeAt(0);
 
-      final unitResult = await session.getResolvedUnit(ref.filePath);
+      // Guarded, because a third-party reference sends this at a file in the
+      // pub cache rather than in the project. That resolves, but it is the
+      // analyzer answering about a file outside the context root, and a throw
+      // here would otherwise escape into the handler in [extract] and lose the
+      // whole scope over one unreadable dependency.
+      Object? unitResult;
+      try {
+        unitResult = await session.getResolvedUnit(ref.filePath);
+      } catch (_) {}
       if (unitResult is! ResolvedUnitResult) {
         // The file did not resolve, so nothing can be read out of it. Standing
         // the name in keeps the reference from dangling, which is the whole
         // difference between a smaller row and a wrong one.
-        shims.request(ref.element, allMembers: true);
+        standIn(ref);
         continue;
       }
       visitedUnits.add(unitResult.unit);
@@ -362,28 +435,43 @@ class TransplantExtractor {
           // widgets to the metrics. Shimming it away reports zero where
           // analyzing the original project counted a subtree, which is a wrong
           // number rather than a missing file.
-          final bool isWidget = decl is ClassDeclaration && _isUiClass(decl);
+          final bool isWidget =
+              decl is ClassDeclaration && isUiClassDeclaration(decl);
           final bool declaresUi =
-              decl is ClassDeclaration && !isWidget && _declaresUiMember(decl);
+              decl is ClassDeclaration && !isWidget && declaresUiMember(decl);
           final bool isWidgetFn =
-              decl is FunctionDeclaration && _returnsUi(decl);
+              decl is FunctionDeclaration && returnsUi(decl);
 
           if (decl is EnumDeclaration || isWidget || declaresUi || isWidgetFn) {
-            extractor.classCode +=
-                '\n${Skeletonizer.skeletonize(decl, unitResult)}\n';
+            final source = Skeletonizer.skeletonize(decl, unitResult);
+
+            // Repo-local inlining is free of the budget: its closure is bounded
+            // by the repository, and capping it would change behaviour this
+            // work never set out to change. Third-party inlining has no such
+            // bound, so it pays, and once the budget is spent the declaration
+            // takes the stand-in branch it would have taken before.
+            if (!ref.fullSurface && !budget.take(source.length)) {
+              standIn(ref);
+              matched = true;
+              break;
+            }
+
+            extractor.classCode += '\n$source\n';
             emittedNames.addAll(declaredNames(decl));
 
             // For StatefulWidgets, pull in the companion State class.
             final ClassDeclaration? widgetDecl =
                 decl is ClassDeclaration && isWidget ? decl : null;
-            if (widgetDecl != null && _isStatefulWidget(widgetDecl)) {
-              _includeCompanionState(
-                widgetDecl,
-                unitResult,
-                extractor,
-                processedKeys,
-              );
-            }
+            final companions =
+                widgetDecl != null && isStatefulWidgetDeclaration(widgetDecl)
+                ? _includeCompanionState(
+                    widgetDecl,
+                    unitResult,
+                    extractor,
+                    processedKeys,
+                    budget: ref.fullSurface ? null : budget,
+                  )
+                : const <ClassDeclaration>[];
 
             // Recurse: visit this declaration and feed its cross-file refs
             // back into pending. The same widget/enum gate applies at the
@@ -397,14 +485,43 @@ class TransplantExtractor {
               shims: shims,
               synthetics: synthetics,
               emittedNames: emittedNames,
+              inlineThirdParty: inlineThirdParty,
+              budget: budget,
+              flutterNames: flutterNames,
             );
             decl.accept(sub);
             pending.addAll(sub.crossFileRefs);
 
+            // The companion `State` is visited under its OWN class, not under
+            // the widget's: a reference to one of its own methods has to read
+            // as a member of the class that declares it, or `_extractSameFile`
+            // searches the wrong class, finds nothing, and stands in for a type
+            // the file already inlines. `memberCode` is discarded for the same
+            // reason it is on the widget above -- those members are already in
+            // the skeletonised class, and hoisting them redeclares them.
+            for (final companion in companions) {
+              final companionSub = DependencyExtractorVisitor(
+                unitResult,
+                companion,
+                processedKeys,
+                imports,
+                session: session,
+                shims: shims,
+                synthetics: synthetics,
+                emittedNames: emittedNames,
+                inlineThirdParty: inlineThirdParty,
+                budget: budget,
+                flutterNames: flutterNames,
+              );
+              companion.accept(companionSub);
+              pending.addAll(companionSub.crossFileRefs);
+              extractor.classCode += companionSub.classCode;
+            }
+
             // Whatever the sub-visitor resolved *within its own file* has to
             // come across too. Taking only `crossFileRefs` discarded it, and
             // the base class of an inlined widget is the case that hurts:
-            // `_isUiClass` admits `class ExternalCard extends _BaseCard`
+            // `isUiClassDeclaration` admits `class ExternalCard extends _BaseCard`
             // because the resolved chain reaches `StatelessWidget`, but
             // `_BaseCard` lives beside it and was dropped, so the emitted file
             // says `extends_non_class` and the chain is gone. A widget whose
@@ -423,11 +540,16 @@ class TransplantExtractor {
             // boundary only through the gate below, so the ungated part stays
             // bounded to one file at a time.
             extractor.classCode += sub.classCode;
-          } else {
+          } else if (ref.fullSurface) {
             // Not reachable as UI, so a stand-in cannot move a widget count:
             // the inline gate above has already established that neither the
             // declaration nor any member of it produces a widget.
             _requestShims(decl, shims);
+          } else {
+            // A third-party reference the element model called UI-producing and
+            // the AST gate then refused. Rare, and the member-scoped stand-in is
+            // the right size for it either way.
+            standIn(ref);
           }
           matched = true;
           break;
@@ -437,7 +559,7 @@ class TransplantExtractor {
       // No declaration in the resolved unit carries the name. A `part` file is
       // the usual reason: the reference resolves to the library, and the
       // declaration lives in a unit the loop never opened.
-      if (!matched) shims.request(ref.element, allMembers: true);
+      if (!matched) standIn(ref);
     }
 
     final fullClassCode = extractor.classCode;
@@ -491,7 +613,8 @@ class TransplantExtractor {
     );
 
     // Generate the final self-contained file
-    return '''
+    final source =
+        '''
 ${imports.render()}
 
 class GeneratedWidget extends StatefulWidget {
@@ -515,6 +638,12 @@ $buildBody
 
 $fullClassCode
 $seedDeclarations$shimDeclarations$syntheticDeclarations''';
+
+    return TransplantResult(
+      source: source,
+      inlinedThirdPartyDeclarations: budget.inlinedDeclarations,
+      truncated: budget.exhausted,
+    );
   }
 
   /// Declares the symbols the transplant's own seeding convention invents.
@@ -801,125 +930,6 @@ $assignments
   }
 }
 
-/// Base class names that identify a UI-related class.
-/// Used for both the fast direct-superclass check and the resolved supertype scan.
-const _uiBaseClasses = {
-  // Widget hierarchy
-  'StatelessWidget', 'StatefulWidget', 'State',
-  'InheritedWidget', 'InheritedNotifier', 'InheritedModel',
-  'RenderObjectWidget', 'LeafRenderObjectWidget',
-  'SingleChildRenderObjectWidget', 'MultiChildRenderObjectWidget',
-  'ProxyWidget', 'ParentDataWidget',
-  // Painting & clipping
-  'CustomPainter', 'CustomClipper',
-  // Decoration & shapes
-  'Decoration', 'ShapeBorder', 'BoxBorder', 'OutlinedBorder',
-  'GradientTransform',
-  // Text / inline content
-  'InlineSpan',
-  // Animation
-  'Animatable',
-  // Navigation
-  'Route',
-  // Riverpod / hooks
-  'HookWidget', 'HookConsumerWidget', 'ConsumerWidget',
-};
-
-/// Return-type substrings that indicate a UI-building function.
-const _uiReturnTypes = {
-  'Widget',
-  'CustomPainter',
-  'CustomClipper',
-  'Decoration',
-  'BoxDecoration',
-  'ShapeDecoration',
-  'ShapeBorder',
-  'OutlinedBorder',
-  'InputDecoration',
-  'InlineSpan',
-  'TextSpan',
-  'WidgetSpan',
-  'Animatable',
-  'Tween',
-  'Animation',
-  'Route',
-  'PageRoute',
-  'PreferredSizeWidget',
-};
-
-/// Returns true if [decl] is a UI-related class (widget, painter, decoration, etc.).
-bool _isUiClass(ClassDeclaration decl) {
-  // Fast path: direct superclass name is in the known set.
-  final superName = decl.extendsClause?.superclass.name.lexeme;
-  if (superName != null && _uiBaseClasses.contains(superName)) return true;
-
-  // Slow path: walk the resolved supertype chain to catch transitive subclasses
-  // (e.g. `class MyCard extends BaseCard` where BaseCard extends StatelessWidget,
-  // or `class MyPainter extends _BasePainter` where _BasePainter extends CustomPainter).
-  try {
-    dynamic element;
-    try {
-      element = (decl as dynamic).declaredFragment?.element;
-    } catch (_) {}
-    element ??= (decl as dynamic).declaredElement;
-    final supertypes = element?.allSupertypes as List?;
-    if (supertypes != null) {
-      return supertypes.any(
-        (t) => _uiBaseClasses.contains((t as dynamic).element?.name),
-      );
-    }
-  } catch (_) {}
-  return false;
-}
-
-bool _isStatefulWidget(ClassDeclaration decl) {
-  final superName = decl.extendsClause?.superclass.name.lexeme;
-  if (superName == 'StatefulWidget') return true;
-  try {
-    dynamic element;
-    try {
-      element = (decl as dynamic).declaredFragment?.element;
-    } catch (_) {}
-    element ??= (decl as dynamic).declaredElement;
-    final supertypes = element?.allSupertypes as List?;
-    if (supertypes != null) {
-      return supertypes.any(
-        (t) => (t as dynamic).element?.name == 'StatefulWidget',
-      );
-    }
-  } catch (_) {}
-  return false;
-}
-
-/// Whether [decl] hands out UI without being a widget itself.
-///
-/// A theme or helper class such as `AppStyles` is not a widget, so
-/// [_isUiClass] rejects it. But `tree_extractor` walks the body of every
-/// widget-returning helper a scope calls, so `AppStyles.buildDivider()`
-/// contributes real widgets to the recorded features. Reducing such a class to
-/// a stand-in reports zero widgets where analyzing the original project counted
-/// a subtree, so it is inlined whole instead.
-///
-/// Matching is syntactic, on the declared return or field type. A member with
-/// no annotation is not treated as UI-producing: inferring it would mean
-/// resolving every member of every skipped class, and the miss is the same one
-/// [_returnsUi] already accepts for top-level functions.
-bool _declaresUiMember(ClassDeclaration decl) {
-  final body = decl.body;
-  if (body is! BlockClassBody) return false;
-  for (final member in body.members) {
-    String type = '';
-    if (member is MethodDeclaration) {
-      type = member.returnType?.toSource() ?? '';
-    } else if (member is FieldDeclaration) {
-      type = member.fields.type?.toSource() ?? '';
-    }
-    if (type.isEmpty || type == 'void') continue;
-    if (_uiReturnTypes.any(type.contains)) return true;
-  }
-  return false;
-}
-
 /// Asks [shims] for a stand-in covering every name [decl] declares.
 ///
 /// The whole declared surface is requested, unlike the third-party path: this
@@ -947,24 +957,31 @@ void _requestShims(CompilationUnitMember decl, ShimEmitter shims) {
   }
 }
 
-/// Returns true if [decl] is a function that builds UI (widgets, decorations,
-/// painters, spans, routes, etc.).
-bool _returnsUi(FunctionDeclaration decl) {
-  final returnType = decl.returnType?.toSource() ?? '';
-  if (returnType.isEmpty || returnType == 'void') return false;
-  return _uiReturnTypes.any((t) => returnType.contains(t));
-}
-
 /// Finds and appends the companion `State` subclass for [widgetDecl] by
 /// scanning all declarations in [unitResult] for a class whose extends clause
 /// matches `State<WidgetName>`.
-void _includeCompanionState(
+///
+/// Returns what it inlined, because a `State` body is where a StatefulWidget
+/// keeps everything the dependency crawl needs to see. Appending it without
+/// visiting it left every reference inside it invisible: no shim, no import, no
+/// cross-file reference. A charting widget is the shape that shows it: the data
+/// types it plots are named only inside the `State`, so the transplant carried
+/// the code that names them and no declaration for any of them. The caller
+/// visits what comes back.
+/// [budget] is charged for a third-party companion and null for a repo-local
+/// one. The charge is recorded but not enforced: the widget it belongs to has
+/// already been admitted, and a `StatefulWidget` whose `State` was dropped
+/// half-way names a type nothing declares, which is a broken file rather than a
+/// smaller one.
+List<ClassDeclaration> _includeCompanionState(
   ClassDeclaration widgetDecl,
   ResolvedUnitResult unitResult,
   DependencyExtractorVisitor extractor,
-  Set<String> processedKeys,
-) {
+  Set<String> processedKeys, {
+  InlineBudget? budget,
+}) {
   final widgetName = widgetDecl.namePart.typeName.lexeme;
+  final companions = <ClassDeclaration>[];
   for (final other in unitResult.unit.declarations) {
     if (other is! ClassDeclaration) continue;
     final superSrc = other.extendsClause?.superclass.toSource() ?? '';
@@ -972,10 +989,13 @@ void _includeCompanionState(
         superSrc.contains('State<$widgetName>')) {
       final key = '${unitResult.path}::${other.namePart.typeName.lexeme}';
       if (processedKeys.add(key)) {
-        extractor.classCode +=
-            '\n${Skeletonizer.skeletonize(other, unitResult)}\n';
+        final source = Skeletonizer.skeletonize(other, unitResult);
+        budget?.take(source.length);
+        extractor.classCode += '\n$source\n';
         extractor.emittedNames.add(other.namePart.typeName.lexeme);
+        companions.add(other);
       }
     }
   }
+  return companions;
 }

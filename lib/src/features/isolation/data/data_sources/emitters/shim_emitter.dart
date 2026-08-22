@@ -4,14 +4,17 @@ import 'package:analyzer/dart/element/type.dart';
 
 /// Emits declaration-only stand-ins for symbols the transplant cannot inline.
 ///
-/// Two buckets reach here. Repo-local declarations that produce no UI, meaning
-/// models, services, and theme or constant holders, are skipped by the filter in
-/// the transplant's cross-file loop. Third-party declarations are dropped
-/// earlier still, by the import gate in `dependency_extractor_visitor.dart`.
-/// Either way the isolated file ends up referencing a name nothing declares,
-/// which is an error-severity diagnostic, and `spm analyze` skips any file that
-/// carries one. Output that the analyzer refuses to read is of no use to the
-/// tool that produced it.
+/// Declarations that produce no UI reach here, meaning models, services, and
+/// theme or constant holders, whether they are repo-local or third-party: the
+/// filter in the transplant's cross-file loop skips them, and the isolated file
+/// then references a name nothing declares. That is an error-severity
+/// diagnostic, and `spm analyze` skips any file that carries one. Output the
+/// analyzer refuses to read is of no use to the tool that produced it.
+///
+/// Third-party declarations reach here for three further reasons: the run was
+/// given `--no-inline-third-party`, the inline budget was spent, or the name is
+/// one `package:flutter/material.dart` also exports. See `flutter_namespace.dart` for
+/// why the last of those prefers a stand-in over the real declaration.
 ///
 /// ## What a shim preserves, and what it deliberately does not
 ///
@@ -33,15 +36,26 @@ import 'package:analyzer/dart/element/type.dart';
 ///
 /// ## The limitation to state plainly
 ///
-/// A shimmed widget has an empty `build`. Analyzing the original project walks
-/// the real one, because `tree_extractor` recurses into custom child widgets'
-/// build bodies and into widget-returning helpers, so an isolated scope that
-/// instantiates a shimmed widget reports a smaller tree than the same scope
-/// measured in place. Repo-local declarations avoid this by being inlined whole
-/// whenever they can produce UI (see `_declaresUiMember` in the transplant).
-/// Third-party widgets have no such escape, so the difference is real: a shim
-/// makes the file analyzable, which is not the same as making it measure
-/// identically.
+/// A shimmed widget has an empty `build`, so an isolated scope that constructs
+/// one describes a smaller tree than the code it came from actually builds.
+///
+/// For a repo-local widget that is a straight loss, and `tree_extractor` proves
+/// it: analyzing the original project recurses into custom child widgets' build
+/// bodies and into widget-returning helpers, so the in-place row counts a
+/// subtree the shimmed row does not. Inlining anything that can produce UI is
+/// what keeps that from being the normal case (see `ui_surface.dart`).
+///
+/// For a third-party widget the comparison runs the other way, which is worth
+/// stating because the symmetry is tempting and wrong.
+/// `TreeExtractor._indexLibrary` cannot read a library under the pub cache:
+/// `AnalysisContextCollection.contextFor` throws for a path outside the
+/// analyzed roots, so the child is dropped and the in-place row never counted
+/// that subtree either. Carrying the widget therefore makes the isolated row
+/// LARGER than the in-place one. The isolated file is the better reproduction
+/// of the code; it is not the same measurement.
+///
+/// What is left reaching this emitter is the exceptions listed above, and every
+/// one of them is either asked for or recorded on the row.
 class ShimEmitter {
   /// [alreadyDeclared] is the live set of names the isolated file declares by
   /// inlining. It is read at [render] time, not at [request] time, because
@@ -81,8 +95,7 @@ class ShimEmitter {
   /// [member] is the specific member the reference reached, when there was
   /// one. Recording it keeps the shim to the size of what is actually used:
   /// rendering every member of a third-party value object produces hundreds of
-  /// accessors for a type the scope touches twice, and `vector_math`'s
-  /// `Vector3` alone runs past four hundred lines.
+  /// accessors for a type the scope touches twice.
   ///
   /// [allMembers] asks for the whole declared surface instead, which is what
   /// the repo-local path wants: it requests a declaration wholesale, having
@@ -244,7 +257,15 @@ ${bodies.join('\n\n')}
         name,
         available,
         typeParams,
-        skip: isWidget ? const {'build'} : const {},
+        // `createState` goes with `build`, and for the same reason the base was
+        // collapsed: this shim extends `StatelessWidget`, and `State<T>` bounds
+        // `T` on `StatefulWidget`, so carrying the real type's `createState`
+        // renders `State<SvgPicture> createState()` against a `SvgPicture` that
+        // is no longer stateful. Nothing calls it either -- the framework would,
+        // and a stand-in widget never reaches the framework.
+        skip: isWidget
+            ? const {'build', 'createState', ..._frameworkOnly}
+            : _frameworkOnly,
       ),
     );
 
@@ -265,6 +286,18 @@ ${bodies.join('\n\n')}
     return '$header {\n${members.join('\n')}\n}';
   }
 
+  /// Members only the framework calls, which a stand-in therefore never needs.
+  ///
+  /// `debugFillProperties` is the one that costs something: its parameter type
+  /// is `DiagnosticPropertiesBuilder`, and `package:flutter/widgets.dart`
+  /// re-exports foundation as `show Brightness, UniqueKey`, so the name does NOT
+  /// arrive through `material.dart`. A shim that carries the signature needs an
+  /// unprefixed foundation import that the transplant may not have -- and when
+  /// the source wrote `import 'package:flutter/foundation.dart' as foundation;`
+  /// it definitely does not. Dropping the member is what the shim is for: a
+  /// declaration-only stand-in owes the call sites, and nothing here calls it.
+  static const Set<String> _frameworkOnly = {'debugFillProperties'};
+
   /// The most members a type may declare and still have its whole surface
   /// rendered.
   ///
@@ -272,8 +305,9 @@ ${bodies.join('\n\n')}
   /// from references alone carries whichever members the traversal happened to
   /// reach, so `removeListener` lands and `addListener` does not, and the file
   /// fails at the one call site the shim forgot. Rendering everything is what
-  /// the referenced-only rule was written to avoid: `vector_math`'s `Vector3`
-  /// runs past four hundred lines. A small type costs little to render whole,
+  /// the referenced-only rule was written to avoid: a maths or geometry value
+  /// object can run to hundreds of lines. A small type costs little to render
+  /// whole,
   /// so the cutoff buys completeness where completeness is cheap and keeps the
   /// reference set where it is not.
   static const int _fullSurfaceLimit = 40;

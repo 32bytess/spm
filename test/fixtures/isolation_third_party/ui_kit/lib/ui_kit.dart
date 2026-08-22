@@ -12,7 +12,67 @@ class FancyButton extends StatelessWidget {
   final String label;
 
   @override
-  Widget build(BuildContext context) => Text(label);
+  Widget build(BuildContext context) => FancyRow(label: label);
+}
+
+/// The second hop. `FancyButton` is reached from the scope; this is reached
+/// only from `FancyButton`'s body, so it comes across only if the crawl
+/// recurses into an inlined third-party widget the way it recurses into a
+/// repo-local one.
+class FancyRow extends StatelessWidget {
+  const FancyRow({super.key, required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) =>
+      Row(children: [Text(label), const _FancyDot(), const Divider()]);
+}
+
+/// Private, and in the same file as the widget that names it.
+///
+/// Reachable only through the same-file lookup, which used to be gated on the
+/// declaring file being inside the project. A package unit fails that test even
+/// while it is the unit being walked, so this is what shows the gate moved.
+class _FancyDot extends StatelessWidget {
+  const _FancyDot();
+
+  @override
+  Widget build(BuildContext context) => const SizedBox(width: 2, height: 2);
+}
+
+/// Named after something `package:flutter/material.dart` exports.
+///
+/// Inlining this would put a body behind a name the transplanted code may have
+/// meant Flutter's, so it is stood in for instead. The body is distinctive so a
+/// test can tell which of the two happened.
+class Divider extends StatelessWidget {
+  const Divider({super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      Column(children: [Text('ui_kit divider'), Text('second line')]);
+}
+
+/// A third-party `StatefulWidget`, so the companion `State` has to be found in
+/// a unit outside the project.
+///
+/// This is the case that matters most: `TreeExtractor` measures the `State`'s
+/// build body, not the widget's, so a `StatefulWidget` carried without its
+/// `State` contributes nothing and names a type nothing declares.
+class FancyPanel extends StatefulWidget {
+  const FancyPanel({super.key});
+
+  @override
+  State<FancyPanel> createState() => _FancyPanelState();
+}
+
+class _FancyPanelState extends State<FancyPanel> {
+  int _taps = 0;
+
+  @override
+  Widget build(BuildContext context) =>
+      Column(children: [Text('panel \$_taps'), const SizedBox(height: 4)]);
 }
 
 /// The other half of the same bucket: the plain data types a charting or
@@ -78,4 +138,29 @@ class FancyController extends FancyBase {
   void pad38() {}
   void pad39() {}
   void pad40() {}
+}
+
+/// The shape that makes carrying a package's code the worse answer.
+///
+/// `provider` is the real case. Its `ChangeNotifierProvider<T extends
+/// ChangeNotifier?>` type-checks in the app because the repo-local class
+/// passed for `T` really does extend `ChangeNotifier`. In an isolated file that
+/// class is a stand-in with no supertype at all, so carrying the generic
+/// across turns a file that analysed into one that does not, and `spm analyze`
+/// skips any file carrying an error.
+///
+/// A stand-in for this widget renders its type parameters without bounds, so it
+/// accepts whatever the scope passes and the file analyses. That is what the
+/// fallback pass exists to notice.
+abstract class FancyModel {
+  String get title;
+}
+
+class FancyTypedBox<T extends FancyModel> extends StatelessWidget {
+  const FancyTypedBox({super.key, required this.value});
+
+  final T value;
+
+  @override
+  Widget build(BuildContext context) => Text(value.title);
 }

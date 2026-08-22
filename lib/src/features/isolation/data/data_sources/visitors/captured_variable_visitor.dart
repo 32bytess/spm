@@ -75,8 +75,8 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
 
   /// Top-level variables the scope reads from another file in the project.
   ///
-  /// These are mutable application-wide handles, of which nMobile's
-  /// `application` service locator is the recurring case. The extractor drops
+  /// These are mutable application-wide handles, of which a top-level service
+  /// locator is the recurring case. The extractor drops
   /// because they are not widgets, so the isolated file has to seed them
   /// itself. They are not lifted to fields: the declaration stays top-level, so
   /// only an assignment is needed.

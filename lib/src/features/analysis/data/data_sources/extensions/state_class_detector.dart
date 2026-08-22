@@ -32,25 +32,40 @@ bool isConsumerWidgetSubclass(ClassDeclaration decl) {
   return superName == 'ConsumerWidget' || superName == 'HookConsumerWidget';
 }
 
-/// The builder callback of a builder-pattern widget creation, if it has one.
+/// The inline builder callback of a builder-pattern widget creation, if it has
+/// one.
 ///
 /// Most widgets pass it as the named `builder:` argument; the widgets in
 /// [AppConstants.positionalBuilderScopeWidgets] also accept it as the first
 /// positional argument (`Obx(() => ...)`).
-Expression? findBuilderArgument(
+///
+/// Only a [FunctionExpression] counts. A tear-off or a variable reference
+/// (`builder: _buildRow`) is measured wherever the function is declared, not
+/// here, and this is the single place that decides it for both commands.
+/// `analyze` used to apply that test at its own call site and `isolate` did not,
+/// so a tear-off became an isolate-only match whose scope node is an identifier:
+/// the transplant fell through to its expression fallback and emitted
+/// `return _buildRow;`, a function returned where a `Widget` is required. That
+/// is a file which can never analyse clean, a row in the mapping, and a count
+/// in the summary, for a scope `analyze` never reports at all.
+FunctionExpression? findBuilderArgument(
   InstanceCreationExpression node,
   String typeName,
 ) {
   for (final arg in node.argumentList.arguments) {
     if (arg is NamedArgument && arg.name.lexeme == 'builder') {
-      return arg.argumentExpression;
+      // Returns rather than continues: an explicit `builder:` settles the
+      // question, so a widget that also takes a positional callback does not
+      // fall through and match that one instead.
+      final expression = arg.argumentExpression;
+      return expression is FunctionExpression ? expression : null;
     }
   }
 
   if (AppConstants.positionalBuilderScopeWidgets.contains(typeName) &&
       node.argumentList.arguments.isNotEmpty) {
     final first = node.argumentList.arguments.first;
-    if (first is Expression) return first;
+    if (first is FunctionExpression) return first;
   }
   return null;
 }

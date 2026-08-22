@@ -9,6 +9,28 @@ void main() {
   late String testProjectDir;
   late String outputDir;
 
+  // One isolate run over the fixtures, shared by every group below that only
+  // reads what it wrote. The run is around ten seconds and it used to happen
+  // once per test, which was most of this suite's runtime.
+  late String sharedOutputDir;
+
+  setUpAll(() async {
+    sharedOutputDir = Directory.systemTemp
+        .createTempSync('spm_isolation_shared')
+        .path;
+    await IsolationDataSourceImpl()
+        .isolate(
+          directories: [p.absolute('test/fixtures/isolation')],
+          outputDir: sharedOutputDir,
+        )
+        .drain();
+  });
+
+  tearDownAll(() {
+    final dir = Directory(sharedOutputDir);
+    if (dir.existsSync()) dir.deleteSync(recursive: true);
+  });
+
   setUp(() {
     dataSource = IsolationDataSourceImpl();
     testProjectDir = p.absolute('test/fixtures/isolation');
@@ -231,12 +253,8 @@ void main() {
   group('a transplanted scope keeps the bindings it used to close over', () {
     late String content;
 
-    setUp(() async {
-      await dataSource
-          .isolate(directories: [testProjectDir], outputDir: outputDir)
-          .drain();
-
-      content = Directory(p.join(outputDir, 'BlocBuilder'))
+    setUpAll(() async {
+      content = Directory(p.join(sharedOutputDir, 'BlocBuilder'))
           .listSync(recursive: false)
           .whereType<File>()
           .firstWhere((f) => f.path.contains('captures'))
@@ -288,12 +306,8 @@ void main() {
   group('the transplant declares the seeds its own convention invents', () {
     late String content;
 
-    setUp(() async {
-      await dataSource
-          .isolate(directories: [testProjectDir], outputDir: outputDir)
-          .drain();
-
-      content = Directory(p.join(outputDir, 'BlocBuilder'))
+    setUpAll(() async {
+      content = Directory(p.join(sharedOutputDir, 'BlocBuilder'))
           .listSync(recursive: false)
           .whereType<File>()
           .firstWhere((f) => f.path.contains('captures'))
@@ -324,15 +338,94 @@ void main() {
     });
   });
 
+  group('a builder handed a tear-off is not a scope', () {
+    late List<IsolationDataEvent> events;
+    late List<String> outputs;
+
+    setUpAll(() async {
+      final scratch = Directory.systemTemp.createTempSync('spm_tearoff_test');
+      addTearDown(() => scratch.deleteSync(recursive: true));
+      final fixtures = p.absolute('test/fixtures/isolation');
+
+      // Its own data source and output directory: `setUpAll` runs before the
+      // file-level `setUp` that builds the shared one.
+      events = await IsolationDataSourceImpl()
+          .isolate(directories: [fixtures], outputDir: scratch.path)
+          .toList()
+          .then((all) => all.whereType<IsolationDataEvent>().toList());
+
+      outputs = Directory(scratch.path)
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.dart'))
+          .map((f) => f.readAsStringSync())
+          .toList();
+    });
+
+    test('the inline builders are still isolated', () {
+      // The absence asserted below has to be an absence of the tear-off, not an
+      // absence of builder scopes altogether.
+      expect(
+        events.where((e) => e.type == 'BlocBuilder'),
+        isNotEmpty,
+        reason: 'inline BlocBuilder callbacks are scopes and must survive',
+      );
+    });
+
+    test('`TearOffBuilderHost` contributes no scope and no file', () {
+      // `analyze` has never counted this scope. `isolate` used to, which put a
+      // row in the mapping and a file on disk for a scope with no metrics
+      // anywhere to pair it against.
+      for (final output in outputs) {
+        expect(
+          output,
+          isNot(contains('return _row;')),
+          reason: 'a tear-off transplanted as a scope returns a function '
+              'where a Widget belongs, so the file can never analyse clean',
+        );
+      }
+    });
+  });
+
+  group('an inlined StatefulWidget brings its State\'s dependencies with it', () {
+    late String content;
+
+    setUpAll(() async {
+      content = Directory(p.join(sharedOutputDir, 'State'))
+          .listSync(recursive: false)
+          .whereType<File>()
+          .firstWhere((f) => f.path.contains('MyStatefulState'))
+          .readAsStringSync();
+    });
+
+    test('stands in for a type named only inside the companion State', () {
+      // `_ExternalStatefulState` is copied across a file boundary and holds a
+      // `Vector3`. The companion was skeletonised and never visited, so nothing
+      // in it reached the dependency crawl: no stand-in, no import, no
+      // cross-file reference. Measured on one real repository, visiting it took
+      // that repository from 447 undefined-name errors to 65.
+      expect(content, contains('class _ExternalStatefulState'));
+      expect(content, contains('Vector3(1, 2, 3)'));
+      expect(content, contains('class Vector3'));
+    });
+
+    test('carries the import for a name material re-exports behind a show', () {
+      // `PartedWidget` overrides `debugFillProperties`, whose parameter type
+      // `material.dart` does NOT export: `widgets.dart` re-exports foundation as
+      // `show Brightness, UniqueKey`. Deciding which imports to carry by walking
+      // the export graph concluded material already provided the name and
+      // carried nothing, leaving an undefined name in the output.
+      expect(content, contains('class PartedWidget extends StatefulWidget'));
+      expect(content, contains('debugFillProperties'));
+      expect(content, contains("import 'package:flutter/foundation.dart';"));
+    });
+  });
+
   group('a third-party dependency becomes a stand-in, not a dangling name', () {
     late String content;
 
-    setUp(() async {
-      await dataSource
-          .isolate(directories: [testProjectDir], outputDir: outputDir)
-          .drain();
-
-      content = Directory(p.join(outputDir, 'State'))
+    setUpAll(() async {
+      content = Directory(p.join(sharedOutputDir, 'State'))
           .listSync(recursive: false)
           .whereType<File>()
           .firstWhere((f) => f.path.contains('ThirdPartyHostState'))
@@ -345,15 +438,16 @@ void main() {
     });
 
     test('keeps the value object a value object', () {
-      // vector_math's Vector3 is never in the widget tree. Handing it a
-      // `Widget` supertype would invent widgets that were never built.
+      // The `Vector3` this fixture imports is never in the widget tree.
+      // Handing it a `Widget` supertype would invent widgets that were never
+      // built.
       expect(content, isNot(contains('class Vector3 extends')));
     });
 
     test('carries only the members the scope reaches', () {
-      // Vector3 declares several hundred swizzle accessors. Emitting the
-      // declared surface rather than the referenced one produced a 400-line
-      // stand-in for a type this scope touches twice.
+      // The imported type declares several hundred swizzle accessors.
+      // Emitting the declared surface rather than the referenced one produced a
+      // stand-in of several hundred lines for a type this scope touches twice.
       expect(content, contains('double get x'));
       expect(content, contains('double get y'));
       expect(content, isNot(contains('get zzzz')));
@@ -361,8 +455,8 @@ void main() {
     });
 
     test('never emits a private member of the package it stands in for', () {
-      // `_v3storage` is private to vector_math's own library; a stand-in in
-      // another library could never have been reached through it.
+      // `_v3storage` is private to the imported type's own library; a
+      // stand-in in another library could never have been reached through it.
       expect(content, isNot(contains('_v3storage')));
     });
   });
@@ -370,13 +464,9 @@ void main() {
   group("the scope's own constructor never lands in the generated State", () {
     late Map<String, String> isolated;
 
-    setUp(() async {
-      await dataSource
-          .isolate(directories: [testProjectDir], outputDir: outputDir)
-          .drain();
-
+    setUpAll(() async {
       String read(String scopeDir, String needle) =>
-          Directory(p.join(outputDir, scopeDir))
+          Directory(p.join(sharedOutputDir, scopeDir))
               .listSync()
               .whereType<File>()
               .firstWhere((f) => f.path.contains(needle))

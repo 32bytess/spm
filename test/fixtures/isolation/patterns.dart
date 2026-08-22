@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'parted_host.dart';
 import 'external_deps.dart';
 
 // 1. State subclass (Whole tree)
@@ -25,6 +26,7 @@ class _MyStatefulState extends State<MyStateful> {
         Text('Count: $_counter', style: const TextStyle(color: kExternalColor)),
         const ExternalChild(),
         const ExternalStateful(),
+        const PartedWidget(),
         const ExternalCard(),
         ...buildExternalItems(context),
         CustomPaint(painter: ExternalPainter()),
@@ -93,4 +95,18 @@ class BuilderExamples extends StatelessWidget {
       ],
     );
   }
+}
+
+// 4. A builder handed a tear-off rather than a closure. Not a scope in either
+// command: there is no callback body at the creation site to transplant or to
+// measure. `isolate` used to take it anyway, and since the scope node is an
+// identifier the transplant fell through to its expression fallback and wrote
+// `return _row;`, a function returned where a `Widget` belongs.
+class TearOffBuilderHost extends StatelessWidget {
+  const TearOffBuilderHost({super.key});
+
+  Widget _row(BuildContext context, dynamic state) => const Text('tear-off');
+
+  @override
+  Widget build(BuildContext context) => BlocBuilder(builder: _row);
 }

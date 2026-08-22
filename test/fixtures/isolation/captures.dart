@@ -21,7 +21,7 @@ class BlocBuilder<S> extends StatelessWidget {
   Widget build(BuildContext context) => throw UnimplementedError();
 }
 
-/// Declares a field called `context`, as nMobile's `BottomDialog` does. Copying
+/// Declares a field called `context`, as some dialog widgets do. Copying
 /// it onto the generated `State` would shadow `State.context`.
 class CaptureDialog {
   late BuildContext context;
