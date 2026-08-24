@@ -67,7 +67,12 @@ void main() {
     final content = stateIsolatedFile.readAsStringSync();
 
     // Should contain the state class members
-    expect(content, contains('int _counter = 0;'));
+    // The field's value is not discarded, it moves: the State declares the
+    // binding, the generated initState assigns it, and the value it starts from
+    // is a top-level variable anyone can edit or lift into a dependencies file.
+    expect(content, contains('late int _counter;'));
+    expect(content, contains('_counter = fixtureCounter;'));
+    expect(content, contains('int fixtureCounter = 0;'));
     expect(content, contains('void _increment()'));
 
     // Widget classes from cross-file deps are inlined
@@ -119,7 +124,17 @@ void main() {
     // enough for the file to resolve, never enough to change a count.
     expect(content, contains('class ExternalService'));
     expect(content, isNot(contains("'\$prefix-\$id'")));
-    expect(content, contains('void externalHelper() {}'));
+    // Reached from build(), so the declaration has to be there for the call to
+    // resolve and the body must not be: the features read the shape of the
+    // tree and never a value.
+    expect(content, contains('dynamic externalLabel('));
+    expect(content, isNot(contains('external label ')));
+
+    // Reached only from `onPressed: _increment`, and `_increment` is written
+    // out without its body, so nothing in the file names this at all. A
+    // stand-in for it would be a declaration standing in for code that cannot
+    // run during the rebuild being measured.
+    expect(content, isNot(contains('externalHelper')));
     expect(content, isNot(contains('External helper called')));
     expect(content, contains('const dynamic kExternalColor = null;'));
     expect(content, isNot(contains('kExternalColor = Colors.red')));
@@ -318,23 +333,29 @@ void main() {
       // `state = fixtureState;` is only half a convention while nothing
       // declares fixtureState: the file carries an error-severity diagnostic,
       // and `spm analyze` skips any file that does.
-      expect(content, contains('late CaptureState fixtureState;'));
-      expect(content, contains('late bool fixtureOnlyActive;'));
-      expect(content, contains('late String fixtureHeading;'));
+      expect(content, contains('CaptureState fixtureState'));
+      expect(content, contains('bool fixtureOnlyActive'));
+      expect(content, contains('String fixtureHeading'));
     });
 
     test('declares the captured global as well as its seed', () {
       // initState assigns to `captureTheme`, so the global itself has to
       // exist. The dependency extractor dropped it for not being a widget.
-      expect(content, contains('late CaptureTheme captureTheme;'));
-      expect(content, contains('late CaptureTheme captureThemeValue;'));
+      expect(content, contains('CaptureTheme captureTheme ='));
+      expect(content, contains('CaptureTheme captureThemeValue ='));
     });
 
-    test('leaves every seed unassigned', () {
-      // A fabricated default would be measured as though it were the value
-      // that was really there; an unset `late` throws on read instead.
-      expect(content, isNot(contains('fixtureState =')));
-      expect(content, isNot(contains('captureThemeValue =')));
+    test('gives every seed a value of its own type', () {
+      // These used to be declared `late` and left unassigned, on the argument
+      // that a fabricated default could be mistaken for the value that was
+      // really there. The argument holds for types and not for values: the
+      // generated initState reads every one of them, so an unassigned `late` is
+      // a LateInitializationError before the first frame, and a transplant that
+      // will not mount cannot be measured at all.
+      expect(content, contains('CaptureState fixtureState = CaptureState();'));
+      expect(content, contains('bool fixtureOnlyActive = false;'));
+      expect(content, contains("String fixtureHeading = '';"));
+      expect(content, isNot(contains('late CaptureState fixtureState;')));
     });
   });
 
@@ -380,7 +401,8 @@ void main() {
         expect(
           output,
           isNot(contains('return _row;')),
-          reason: 'a tear-off transplanted as a scope returns a function '
+          reason:
+              'a tear-off transplanted as a scope returns a function '
               'where a Widget belongs, so the file can never analyse clean',
         );
       }
@@ -448,8 +470,13 @@ void main() {
       // The imported type declares several hundred swizzle accessors.
       // Emitting the declared surface rather than the referenced one produced a
       // stand-in of several hundred lines for a type this scope touches twice.
-      expect(content, contains('double get x'));
-      expect(content, contains('double get y'));
+      //
+      // The accessors render `dynamic`, because a member type only survives
+      // when it reaches `Widget`. Their values still come from the real type,
+      // so `x` hands back a double and not a stub: a stub in a slot the call
+      // site typed `double` is a TypeError at the first frame.
+      expect(content, contains('dynamic get x => 0.0;'));
+      expect(content, contains('dynamic get y => 0.0;'));
       expect(content, isNot(contains('get zzzz')));
       expect(content, isNot(contains('crossInto')));
     });
@@ -501,16 +528,242 @@ void main() {
       expect(isolated['nonState'], isNot(contains('const CtorConsumer(')));
     });
 
-    test('marks fields the dropped constructor used to initialise as late', () {
+    test('gives fields the dropped constructor used to initialise a value', () {
       // Dropping the constructor silently would leave these unassigned, which
-      // is a different error rather than a fix.
-      expect(isolated['fieldFormal'], contains('late final String _seed;'));
-      expect(isolated['initialiserList'], contains('late final int _doubled;'));
+      // is a different error rather than a fix: the read is in `build`, so an
+      // unassigned `late` is a LateInitializationError on the first frame. The
+      // value comes from the fixture block, which is where every binding a
+      // transplanted scope needs is declared. A value of the field's own type
+      // is not measured, because the features come from the shape of the build
+      // tree.
+      expect(isolated['fieldFormal'], contains('late String _seed;'));
+      expect(isolated['fieldFormal'], contains("String fixtureSeed = '';"));
+      expect(isolated['initialiserList'], contains('late int _doubled;'));
+      expect(isolated['initialiserList'], contains('int fixtureDoubled = 0;'));
+
+      // Declared, never left to throw.
+      expect(
+        isolated['fieldFormal'],
+        isNot(contains(RegExp(r'late String _seed;(?![\s\S]*fixtureSeed)'))),
+      );
     });
 
-    test('leaves fields the constructor did not initialise alone', () {
-      expect(isolated['fieldFormal'], contains('int _hits = 0;'));
-      expect(isolated['fieldFormal'], isNot(contains('late int _hits')));
+    test('a field that carried its own value keeps it, in the block', () {
+      // `_hits` was `int _hits = 0;` and the constructor never touched it. The
+      // hoist relocates the value rather than replacing it with a default, so
+      // a list seeded with twenty rows still builds twenty. Only the place it
+      // is written changes.
+      expect(isolated['fieldFormal'], contains('late int _hits;'));
+      expect(isolated['fieldFormal'], contains('_hits = fixtureHits;'));
+      expect(isolated['fieldFormal'], contains('int fixtureHits = 0;'));
+    });
+  });
+
+  group('code a rebuild cannot run is left out', () {
+    // `spm analyze` prunes exactly this before it counts anything: the body of
+    // a handler closure, the body a handler tear-off names, and every member
+    // `build()` cannot reach. None of it can move a feature, and carrying it is
+    // what made a transplant of a forty-line `build` several hundred lines
+    // long and lost it to an error in code the metrics never read.
+    late String pruned;
+    late String carried;
+    late String prunedDir;
+    late String carriedDir;
+
+    String read(String dir) {
+      final file = Directory(p.join(dir, 'State'))
+          .listSync()
+          .whereType<File>()
+          .firstWhere((f) => f.path.contains('_NonRebuildHostState'));
+      return file.readAsStringSync();
+    }
+
+    setUpAll(() async {
+      prunedDir = Directory.systemTemp.createTempSync('spm_prune_on').path;
+      carriedDir = Directory.systemTemp.createTempSync('spm_prune_off').path;
+      await IsolationDataSourceImpl()
+          .isolate(
+            directories: [p.absolute('test/fixtures/isolation')],
+            outputDir: prunedDir,
+          )
+          .drain();
+      await IsolationDataSourceImpl()
+          .isolate(
+            directories: [p.absolute('test/fixtures/isolation')],
+            outputDir: carriedDir,
+            pruneNonRebuild: false,
+          )
+          .drain();
+      pruned = read(prunedDir);
+      carried = read(carriedDir);
+    });
+
+    tearDownAll(() {
+      for (final dir in [Directory(prunedDir), Directory(carriedDir)]) {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      }
+    });
+
+    test(
+      'a screen pushed from a handler is neither carried nor stood in for',
+      () {
+        // The single largest saving. Pushing a route from `onPressed` used to
+        // drag the whole destination tree into the file, and the services it
+        // called became stand-ins whose degraded signatures are the commonest
+        // error in the output.
+        expect(carried, contains('class HandlerOnlyDestination'));
+        expect(pruned, isNot(contains('HandlerOnlyDestination')));
+        expect(pruned, isNot(contains('HandlerOnlyService')));
+      },
+    );
+
+    test('a handler tear-off keeps its declaration and loses its body', () {
+      // `onPressed: _handleSubmit` is evaluated while the tree is built, so the
+      // name has to resolve. The body runs only on the press, so nothing in it
+      // needs to survive.
+      expect(pruned, contains('onPressed: _handleSubmit'));
+      expect(pruned, contains('void _handleSubmit() {'));
+      expect(pruned, isNot(contains('Navigator.of(context).push')));
+    });
+
+    test('a member build() cannot reach is dropped outright', () {
+      expect(carried, contains('_refresh'));
+      expect(pruned, isNot(contains('_refresh')));
+    });
+
+    test('a widget-returning helper build() calls is kept whole', () {
+      expect(
+        pruned,
+        contains("Widget _buildRow() => Row(children: [Text(_title)]);"),
+      );
+    });
+
+    test('a field initState seeded moves to the fixture block', () {
+      // `_title` is `late final` and the original `initState` assigned it, so
+      // dropping that method outright leaves a file that analyses clean and
+      // throws a LateInitializationError on the first read. What those methods
+      // contribute is a value, and the transplant already knows how to supply
+      // one: the binding joins the fixture block, and the generated `initState`
+      // does nothing but seed it.
+      expect(carried, contains("_title = 'seeded';"));
+      expect(pruned, isNot(contains("_title = 'seeded';")));
+
+      expect(pruned, contains('String fixtureTitle'));
+      expect(
+        pruned,
+        contains(
+          RegExp(
+            r'void initState\(\) \{\s*super\.initState\(\);\s*'
+            r'_title = fixtureTitle;',
+          ),
+        ),
+      );
+    });
+
+    test('everything else initState did goes with it', () {
+      // The seeding is the only part worth keeping. The frame callback beside
+      // it, and anything it reached, is gone.
+      expect(carried, contains('after first frame'));
+      expect(pruned, isNot(contains('after first frame')));
+      expect(pruned, isNot(contains('addPostFrameCallback')));
+    });
+
+    test('a value-returning handler body throws rather than returning null', () {
+      // `validator` returns String?. An empty body completes with null, which
+      // is a different answer rather than no answer; a body that always throws
+      // satisfies every return type because it never completes normally.
+      expect(
+        pruned,
+        contains(
+          RegExp(
+            r'validator: \(value\) \{\s*/\* spm: non-rebuild body '
+            r'erased \*/\s*throw UnimplementedError\(\);',
+          ),
+        ),
+      );
+      expect(pruned, isNot(contains("return 'required'")));
+    });
+
+    test('a void deferred callback is emptied, not made to throw', () {
+      // `addListener` is in the same non-rebuild family as `onPressed` and it
+      // really does run, moments after the scope mounts. Throwing there would
+      // trade an analyzer error for an uncaught exception around the first
+      // frame, which no analyzer run would report.
+      expect(
+        pruned,
+        contains(
+          RegExp(
+            r'addListener\(\(\) \{\s*/\* spm: '
+            r'non-rebuild body erased \*/\s*\}\)',
+          ),
+        ),
+      );
+      expect(pruned, isNot(contains('after change')));
+    });
+
+    test('a handler argument that is not a closure is untouched', () {
+      // `onTap: enabled ? _a : _b` is evaluated while the tree is built, so
+      // `analyze` keeps counting it and both branches stay reachable.
+      expect(pruned, contains('onTap: _enabled ? _toggleA : _toggleB'));
+      expect(pruned, contains('void _toggleA() => setState'));
+      expect(pruned, contains('void _toggleB() => setState'));
+    });
+
+    test('a local function only a handler calls goes with the handler', () {
+      expect(carried, contains('deepInHandler'));
+      expect(pruned, isNot(contains('deepInHandler')));
+    });
+
+    test('a carried declaration has its handlers erased too', () {
+      // The gate applies inside a carried declaration as well as inside the
+      // scope's own class, so the erasure has to reach there too. It did not at
+      // first, and the result was the exact failure the two halves exist to
+      // prevent: `CarriedOnlyFromHandler` skipped by the crawl, still named by
+      // the copied source, undefined in the output.
+      expect(pruned, contains('class CarriedCard'));
+      expect(carried, contains('class CarriedOnlyFromHandler'));
+      expect(pruned, isNot(contains('CarriedOnlyFromHandler')));
+    });
+
+    test('every dependency is a late binding seeded from the block', () {
+      // The shape the extractor emits: `late <Type> <name>;` in the State,
+      // one assignment per binding in a generated initState, and the value it
+      // starts from declared at the top level where it can be lifted into a
+      // shared dependencies file.
+      expect(pruned, contains('late String _title;'));
+      expect(pruned, contains('late bool _enabled;'));
+      expect(pruned, contains('late TextEditingController _controller;'));
+
+      expect(pruned, contains('_enabled = fixtureEnabled;'));
+      expect(pruned, contains('bool fixtureEnabled = true;'));
+      expect(
+        pruned,
+        contains(
+          'TextEditingController fixtureController = '
+          'TextEditingController();',
+        ),
+      );
+
+      // `final` does not come along. A member the prune keeps may still assign
+      // the field -- `_toggleA() => setState(() => _enabled = true)` does --
+      // and `late final` would make that a second write to a final.
+      expect(pruned, isNot(contains('late final')));
+
+      // Carried, with the prune off, the fields keep their own initialisers and
+      // there is no block to lift.
+      expect(carried, contains('bool _enabled = true;'));
+      expect(carried, isNot(contains('fixtureEnabled')));
+    });
+
+    test('a const field stays const, because two features depend on it', () {
+      // `treeConstWidgetCount` and `rootBuildReturnsConstWidget` are features.
+      // Turning a `static const` into a late binding stops every `const`
+      // constructor that reads it being const, and both move.
+      expect(pruned, isNot(contains('late FancySpec')));
+    });
+
+    test('the prune makes the file smaller and no less clean', () {
+      expect(pruned.length, lessThan(carried.length));
     });
   });
 }

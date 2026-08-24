@@ -71,6 +71,7 @@ class _FailingAnalysisRepository implements AnalysisRepository {
   AnalysisStream analyze(
     RepositoryPaths repoDirs, {
     Set<String>? scopeTypes,
+    String? packageConfigFile,
   }) async* {
     yield Left(AnalysisFailure('synthetic analysis failure'));
   }

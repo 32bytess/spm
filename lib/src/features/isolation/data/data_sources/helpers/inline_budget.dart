@@ -12,8 +12,24 @@
 /// before, which is a smaller tree rather than a broken file. The run records
 /// that it happened, since a truncated row and a complete one are not the same
 /// measurement and nothing downstream could otherwise tell them apart.
+///
+/// The caps are far higher than they were, and the reason is that the in-place
+/// walk no longer has one: `spm analyze` now reads a third-party library, so
+/// every scope that exhausts this budget undercounts against the row it is
+/// meant to be compared with. The counter stays, but as a number to report
+/// rather than a limit to hit. Where the raised cap still binds, the row is
+/// marked, so a reader can exclude it rather than be silently short.
 class InlineBudget {
-  InlineBudget({this.maxDeclarations = 200, this.maxCharacters = 200000});
+  InlineBudget({
+    this.maxDeclarations = defaultMaxDeclarations,
+    this.maxCharacters = defaultMaxCharacters,
+  });
+
+  /// The default declaration cap.
+  static const int defaultMaxDeclarations = 2000;
+
+  /// The default character cap.
+  static const int defaultMaxCharacters = 2000000;
 
   /// The most third-party declarations one transplant may inline.
   final int maxDeclarations;

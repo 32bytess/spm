@@ -14,7 +14,9 @@ import 'package:path/path.dart' as p;
 File? packageConfigAbove(String dir) {
   var current = p.normalize(p.absolute(dir));
   while (true) {
-    final candidate = File(p.join(current, '.dart_tool', 'package_config.json'));
+    final candidate = File(
+      p.join(current, '.dart_tool', 'package_config.json'),
+    );
     if (candidate.existsSync()) return candidate;
     final parent = p.dirname(current);
     if (parent == current) return null;

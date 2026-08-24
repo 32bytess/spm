@@ -9,7 +9,8 @@ Use the CLI to:
 - extract static build-tree metrics as JSONL;
 - check that a widget mutation changes structure without changing content or state;
 - instrument `State` classes and collect profile-mode rebuild measurements;
-- extract a rebuild scope into a smaller widget for isolated profiling.
+- extract a rebuild scope into a smaller widget for isolated profiling, and check that the result
+  reaches a frame.
 
 The [project wiki](https://github.com/32bytess/spm/wiki) contains the command reference, JSONL
 schemas, metric definitions, and architecture notes. The package is published on
@@ -46,7 +47,7 @@ spm analyze -o static.jsonl /path/to/flutter/project
 spm validate --base base.dart --mutation mutation.dart --deps dependencies.dart --json
 spm inject -j static.jsonl /path/to/flutter/project
 spm run -j static.jsonl -r /path/to/flutter/project --flutter drive --target=integration_test/integration_test.dart
-spm isolate -o isolated_widgets /path/to/flutter/project
+spm isolate -o isolated_widgets -j map.jsonl /path/to/flutter/project
 ```
 
 Start with the wiki's [Getting Started](https://github.com/32bytess/spm/wiki/Getting-Started)

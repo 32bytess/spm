@@ -6,6 +6,7 @@ import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/diagnostic/diagnostic.dart' show Severity;
 import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:path/path.dart' as p;
+import 'package:spm/src/core/analysis/package_config.dart';
 import 'package:spm/src/core/errors/exceptions.dart';
 import 'package:spm/src/core/types.dart';
 import 'package:spm/src/features/analysis/data/models/analysis_result_model.dart';
@@ -22,6 +23,7 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
   Stream<AnalysisEvent> analyzeDirs(
     List<String> repoDirs, {
     Set<String>? scopeTypes,
+    String? packageConfigFile,
   }) async* {
     int filesScanned = 0;
     int filesSkipped = 0;
@@ -35,7 +37,19 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
     // AST nodes are tied to the collection/session that resolved them. Keep
     // the extractor (and its library cache) local to this run so repeated or
     // concurrent analyses can never reuse stale nodes from another session.
-    final treeExtractor = TreeExtractor();
+    //
+    // The package config is the one every library outside `repoDirs` is read
+    // against, and pinning it is what keeps a package version from becoming a
+    // silent input to the numbers: two runs over the same project read the same
+    // package source even if the lockfile moved between them. The cost is that
+    // a subtree may be counted against a package version the checkout did not
+    // ship with, which is the right trade when the question is about the
+    // project's own structure.
+    final treeExtractor = TreeExtractor(
+      packageConfigFile:
+          packageConfigFile ??
+          repoDirs.map(packageConfigAbove).whereType<File>().firstOrNull?.path,
+    );
     if (collection.contexts.isEmpty) {
       throw AnalyzerInitializationException(
         'No analysis contexts found in : ${repoDirs.join(', ')}',
@@ -99,11 +113,20 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
                 extraction.closure.unresolvedDependencies,
                 root,
               ),
+              packageVersions: extraction.closure.packageVersions,
+              walkedWidgetClasses: extraction.closure.walkedWidgetClasses,
             ),
           );
         }
       }
     }
+
+    // The extractor holds one analysis context collection per package root it
+    // reached, and each of those runs a driver scheduler. Left alive they
+    // accumulate across runs in the same process, which a single CLI invocation
+    // never notices and a test suite does.
+    treeExtractor.clearCache();
+
     yield AnalysisSummaryEvent(
       filesScanned: filesScanned,
       filesSkipped: filesSkipped,
@@ -120,6 +143,13 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
   /// meaningful as a repo-relative path. Filtering here rather than in the
   /// extractor keeps the root, which the extractor does not know, in the one
   /// place that does.
+  /// The paths in [paths] that sit under [root], made relative to it.
+  ///
+  /// A package file now enters the closure and does not survive this, which is
+  /// deliberate: its absolute path names a pub cache on one machine, and a row
+  /// carrying it could not be compared with one produced anywhere else. What
+  /// the row needs from a package is its version, and `packageVersions` carries
+  /// that.
   List<String> _withinRoot(List<String> paths, String root) {
     final within = <String>[];
     for (final path in paths) {

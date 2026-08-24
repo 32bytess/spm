@@ -37,13 +37,15 @@ class _MyStatefulState extends State<MyStateful> {
         Container(decoration: const ShapeDecoration(shape: ExternalShape())),
         ExternalStyles.divider(),
         Text(ExternalService().label(_counter)),
+        Text(externalLabel(_counter)),
         ElevatedButton(onPressed: _increment, child: const Text('Add')),
       ],
     );
   }
 }
 
-// Mocking Bloc/Get/Provider for harvesting detection
+// Minimal stand-ins for the state-management widgets detection keys on, so the
+// fixture resolves without depending on the packages that declare them.
 class ConsumerWidget {
   Widget build(BuildContext context, dynamic ref) => Container();
 }

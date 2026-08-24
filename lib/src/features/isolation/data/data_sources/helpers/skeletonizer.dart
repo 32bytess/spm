@@ -5,53 +5,113 @@ import 'package:analyzer/dart/element/element.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 
 class Skeletonizer {
-  static const String placeholder = "Image.asset('assets/placeholder.png')";
+  /// The widget an image construction that cannot be kept is replaced by.
+  static const String placeholder = "Image.asset('$placeholderAsset')";
 
-  /// Image constructions rewritten to [placeholder], because an isolated file
-  /// has no assets directory and no network to reach.
+  /// The provider an image source is replaced by.
   ///
-  /// SDK classes only. `SvgPicture` and `CachedNetworkImage` used to be here,
-  /// and they were the two entries that made the set say something other than
-  /// what it means: they are widgets from third-party packages, and the
-  /// transplant now carries a third-party widget's real tree rather than
-  /// replacing it. Substituting one widget for another was hiding whatever
-  /// those packages actually build.
+  /// Still an `ImageProvider`, which is the whole point. Rewriting a provider
+  /// to `Image.asset(...)` turned a value object into a widget: in place
+  /// `BuildMetricsVisitor` counts `NetworkImage` in `valueObjectAllocCount`,
+  /// and as an `Image` it lands in `treeNonConstWidgetCount` and adds a level
+  /// of depth, so two features diverged in opposite directions wherever an
+  /// image provider appeared. It also put a widget in a provider-typed slot,
+  /// which `BoxDecoration(image: ...)` and `CircleAvatar(backgroundImage: ...)`
+  /// reject, and `argument_type_not_assignable` is the commonest error in the
+  /// output.
+  static const String providerPlaceholder =
+      "const AssetImage('$placeholderAsset')";
+
+  /// The asset every rewritten image points at.
+  static const String placeholderAsset = 'assets/placeholder.png';
+
+  /// Left where an argument was removed, so the loss is visible in the file
+  /// and countable from it.
+  static const String droppedLoadingBuilder =
+      '/* spm: loadingBuilder dropped, Image.asset has no such argument */';
+
+  /// Image providers replaced whole, because their arguments are a URL, a path
+  /// or bytes and never a widget subtree.
   ///
-  /// Under `--no-inline-third-party` they get the same declaration-only
-  /// stand-in every other third-party widget gets, which under-counts them the
-  /// same way. That is the flag's own trade-off rather than a second one.
-  static final Set<String> _imageClasses = {
-    'Image',
+  /// SDK classes only. Image widgets from packages used to be in this family,
+  /// and they were the entries that made it say something other than what it
+  /// means: they are third-party widgets, and the transplant now carries a
+  /// third-party widget's real tree rather than replacing it.
+  static final Set<String> _providerClasses = {
     'AssetImage',
     'NetworkImage',
     'FileImage',
     'MemoryImage',
+  };
+
+  /// Image constructions kept in place, with only their source substituted.
+  ///
+  /// Replacing the whole node erased widget subtrees: `errorBuilder` and
+  /// `loadingBuilder` are widget-returning closures, and in place
+  /// `BuildMetricsVisitor` walks the argument list and counts what they build.
+  /// A revision that adds an `errorBuilder` therefore produced a nonzero
+  /// in-place delta and a zero transplant delta, which is a delta erased.
+  static final Set<String> _imageWidgetClasses = {
+    'Image',
     'DecorationImage',
     'FadeInImage',
     'RawImage',
   };
 
-  /// [rewriter] contributes extra edits alongside the image replacements. The
-  /// transplant uses it to re-insert casts that type promotion used to supply.
-  /// Edits from both sources are applied in a single right-to-left pass so
-  /// their offsets stay valid.
+  /// `Image` constructors whose first positional argument names the source.
+  static const Set<String> _imageSourceConstructors = {
+    'asset',
+    'network',
+    'file',
+    'memory',
+  };
+
+  /// [rewriters] contribute extra edits alongside the image replacements. The
+  /// transplant uses them to re-insert casts that type promotion used to supply
+  /// and to rename a declaration that would shadow a Flutter name. Edits from
+  /// every source are applied in a single right-to-left pass so their offsets
+  /// stay valid.
   static String skeletonize(
     AstNode node,
     ResolvedUnitResult result, {
-    SourceRewriter? rewriter,
+    List<SourceRewriter> rewriters = const [],
   }) {
     final collector = _ReplacementCollector(result);
     node.accept(collector);
 
     String source = result.content.substring(node.offset, node.end);
     final replacements = <Replacement>[...collector.replacements];
-    if (rewriter != null) {
+    for (final rewriter in rewriters) {
+      // Cleared first, because one rewriter serves the whole transplant and its
+      // nodes come from several files. A leftover edit from another file could
+      // land inside this node's range by coincidence, and nothing downstream
+      // would notice.
+      rewriter.reset();
       node.accept(rewriter);
       replacements.addAll(rewriter.replacements);
     }
-    replacements.sort((a, b) => b.offset.compareTo(a.offset));
-
+    // Edits now arrive from several independent sources, so one can land
+    // inside another: an `Image(...)` inside a handler body the eraser
+    // replaces whole, for instance. A nested edit cannot survive the
+    // right-to-left pass, because the outer replacement still carries the
+    // original length while the inner one has already changed it. Outermost
+    // wins, which is the same rule `_ReplacementCollector` applies to the
+    // edits it makes on its own.
+    replacements.sort((a, b) {
+      final byOffset = a.offset.compareTo(b.offset);
+      return byOffset != 0 ? byOffset : b.length.compareTo(a.length);
+    });
+    final applicable = <Replacement>[];
+    var coveredTo = -1;
     for (final r in replacements) {
+      if (r.offset < coveredTo) continue;
+      applicable.add(r);
+      coveredTo = r.offset + r.length;
+    }
+
+    applicable.sort((a, b) => b.offset.compareTo(a.offset));
+
+    for (final r in applicable) {
       final relativeOffset = r.offset - node.offset;
       if (relativeOffset < 0 || relativeOffset >= source.length) continue;
       source = source.replaceRange(
@@ -77,34 +137,187 @@ class Replacement {
 abstract class SourceRewriter extends RecursiveAstVisitor<void> {
   /// Edits collected during traversal.
   List<Replacement> get replacements;
+
+  /// Drops the edits from the previous traversal.
+  ///
+  /// Called before each one, so a rewriter shared across several nodes never
+  /// applies an offset that belonged to a different file.
+  void reset() {}
 }
 
 class _ReplacementCollector extends RecursiveAstVisitor<void> {
   final List<Replacement> replacements = [];
   final ResolvedUnitResult result;
 
+  /// Arguments already replaced whole, so the walk does not descend into them.
+  ///
+  /// A replacement inside another replacement's span cannot survive the
+  /// right-to-left pass: the outer edit still holds the original length, and
+  /// the inner edit has already changed it.
+  final Set<AstNode> _replacedWhole = {};
+
   _ReplacementCollector(this.result);
 
   @override
   void visitInstanceCreationExpression(InstanceCreationExpression node) {
-    if (_isImage(node)) {
+    final owner = _imageOwner(node);
+    if (owner != null && Skeletonizer._providerClasses.contains(owner)) {
       replacements.add(
-        Replacement(node.offset, node.length, Skeletonizer.placeholder),
+        Replacement(node.offset, node.length, Skeletonizer.providerPlaceholder),
       );
       return;
+    }
+    if (owner != null && Skeletonizer._imageWidgetClasses.contains(owner)) {
+      if (_rewriteImageWidget(
+        owner,
+        node.constructorName.name?.name,
+        node.constructorName.name,
+        node.argumentList,
+        node,
+      )) {
+        return;
+      }
     }
     super.visitInstanceCreationExpression(node);
   }
 
   @override
   void visitMethodInvocation(MethodInvocation node) {
-    if (_isImage(node)) {
+    final owner = _imageOwner(node);
+    if (owner != null && Skeletonizer._providerClasses.contains(owner)) {
       replacements.add(
-        Replacement(node.offset, node.length, Skeletonizer.placeholder),
+        Replacement(node.offset, node.length, Skeletonizer.providerPlaceholder),
       );
       return;
     }
+    if (owner != null && Skeletonizer._imageWidgetClasses.contains(owner)) {
+      if (_rewriteImageWidget(
+        owner,
+        node.methodName.name == owner ? null : node.methodName.name,
+        node.methodName,
+        node.argumentList,
+        node,
+      )) {
+        return;
+      }
+    }
     super.visitMethodInvocation(node);
+  }
+
+  @override
+  void visitNamedArgument(NamedArgument node) {
+    if (_replacedWhole.contains(node)) return;
+    super.visitNamedArgument(node);
+  }
+
+  /// Substitutes the source of an image widget, keeping the node and the rest
+  /// of its arguments.
+  ///
+  /// Returns true when the whole node was replaced instead, which happens only
+  /// for the `FadeInImage` named constructors: their two sources are a string
+  /// and a byte buffer in the same call, and there is no substitution that
+  /// keeps both types.
+  bool _rewriteImageWidget(
+    String owner,
+    String? constructorName,
+    AstNode? constructorNameNode,
+    ArgumentList arguments,
+    AstNode node,
+  ) {
+    if (owner == 'FadeInImage') {
+      if (constructorName == null) return false;
+      replacements.add(
+        Replacement(node.offset, node.length, Skeletonizer.placeholder),
+      );
+      return true;
+    }
+
+    if (owner == 'RawImage') {
+      // `ui.Image? image`, and there is no asset that produces one. Null is in
+      // range and leaves every other argument, including the subtree ones,
+      // untouched.
+      final image = _namedArgument(arguments, 'image');
+      if (image != null) {
+        final value = image.argumentExpression;
+        replacements.add(Replacement(value.offset, value.length, 'null'));
+        _replacedWhole.add(image);
+      }
+      return false;
+    }
+
+    // `DecorationImage` needs nothing of its own: its `image:` is a provider,
+    // so the provider rule reaches it on the way down.
+    if (owner == 'DecorationImage') return false;
+
+    if (constructorName == null ||
+        !Skeletonizer._imageSourceConstructors.contains(constructorName)) {
+      // `Image(image: ...)` takes a provider, handled on the way down.
+      return false;
+    }
+
+    if (constructorName != 'asset' && constructorNameNode != null) {
+      replacements.add(
+        Replacement(
+          constructorNameNode.offset,
+          constructorNameNode.length,
+          'asset',
+        ),
+      );
+    }
+
+    final source = arguments.arguments
+        .where((a) => a is! NamedArgument)
+        .firstOrNull;
+    if (source != null) {
+      replacements.add(
+        Replacement(
+          source.offset,
+          source.length,
+          "'${Skeletonizer.placeholderAsset}'",
+        ),
+      );
+      _replacedWhole.add(source);
+    }
+
+    // `Image.asset` has no `loadingBuilder`, so the one argument that cannot
+    // come across is removed with its comma and a marker is left in its place.
+    final loading = _namedArgument(arguments, 'loadingBuilder');
+    if (loading != null) {
+      _removeArgument(arguments, loading);
+      _replacedWhole.add(loading);
+    }
+    return false;
+  }
+
+  NamedArgument? _namedArgument(ArgumentList arguments, String name) {
+    for (final argument in arguments.arguments) {
+      if (argument is NamedArgument && argument.name.lexeme == name) {
+        return argument;
+      }
+    }
+    return null;
+  }
+
+  /// Replaces [argument] and its separating comma with a marker comment.
+  ///
+  /// The comma has to go with it: an argument list cannot hold an empty slot,
+  /// and a comment on its own is not an argument.
+  void _removeArgument(ArgumentList arguments, NamedArgument argument) {
+    var start = argument.offset;
+    var end = argument.end;
+    final following = argument.endToken.next;
+    if (following != null && following.lexeme == ',') {
+      end = following.end;
+    } else {
+      final index = arguments.arguments.indexOf(argument);
+      if (index > 0) {
+        final comma = arguments.arguments[index - 1].endToken.next;
+        if (comma != null && comma.lexeme == ',') start = comma.offset;
+      }
+    }
+    replacements.add(
+      Replacement(start, end - start, Skeletonizer.droppedLoadingBuilder),
+    );
   }
 
   /// Rewrites the pre-Dart-3 default-value separator, `{int x: 5}` -> `{int x = 5}`.
@@ -125,7 +338,8 @@ class _ReplacementCollector extends RecursiveAstVisitor<void> {
     super.visitFormalParameterDefaultClause(node);
   }
 
-  bool _isImage(AstNode node) {
+  /// The image class [node] constructs, or null when it constructs none.
+  String? _imageOwner(AstNode node) {
     Element? element;
     if (node is InstanceCreationExpression) {
       element =
@@ -134,12 +348,17 @@ class _ReplacementCollector extends RecursiveAstVisitor<void> {
     } else if (node is MethodInvocation) {
       element = _getElement(node.methodName) ?? _getElement(node);
     }
-    if (element == null) return false;
-    if (!Skeletonizer._imageClasses.contains(element.name)) return false;
-    // The names in the set are Flutter's, and a package is free to reuse one.
-    // Rewriting somebody else's `NetworkImage` to an asset would replace a
+    if (element == null) return null;
+    final name = element.name;
+    if (name == null) return null;
+    if (!Skeletonizer._providerClasses.contains(name) &&
+        !Skeletonizer._imageWidgetClasses.contains(name)) {
+      return null;
+    }
+    // The names in these sets are Flutter's, and a package is free to reuse
+    // one. Rewriting somebody else's `NetworkImage` to an asset would replace a
     // widget tree the transplant is now able to carry.
-    return _isSdkOwned(element);
+    return _isSdkOwned(element) ? name : null;
   }
 
   /// Whether [element] is declared by the Dart or Flutter SDK.

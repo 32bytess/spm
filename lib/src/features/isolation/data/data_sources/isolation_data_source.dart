@@ -8,10 +8,17 @@ abstract class IsolationDataSource {
   ///
   /// [inlineThirdParty] carries a third-party widget's own tree into the output
   /// instead of standing it in. See [IsolateCommand] for what it costs.
+  /// [inlineMaxDeclarations] and [inlineMaxCharacters] bound that carrying.
+  ///
+  /// [pruneNonRebuild] leaves out the code a rebuild cannot run, which is what
+  /// `spm analyze` already ignores. See [IsolateCommand].
   IsolationEventStream isolate({
     required List<String> directories,
     required String outputDir,
     String? jsonlPath,
     bool inlineThirdParty,
+    int inlineMaxDeclarations,
+    int inlineMaxCharacters,
+    bool pruneNonRebuild,
   });
 }

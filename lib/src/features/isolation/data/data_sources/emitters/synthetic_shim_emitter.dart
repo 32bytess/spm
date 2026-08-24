@@ -1,3 +1,6 @@
+import 'package:spm/src/features/isolation/data/data_sources/emitters/stub_emitter.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/default_values.dart';
+
 /// Emits stand-ins for references the analyzer could not resolve at all.
 ///
 /// [ShimEmitter] works from elements, so it can only stand in for a symbol the
@@ -9,8 +12,9 @@
 ///
 /// The same gap shows up in a fully resolved project whenever the extension
 /// that defines a member lives in a package the transplant refuses to import.
-/// `context.read<T>()` is the case that matters most, since provider and
-/// flutter_bloc between them account for a large share of real scopes.
+/// `context.read<T>()` is the case that matters most, since state-management
+/// packages hang that shape off `BuildContext` and a large share of real
+/// scopes go through it.
 ///
 /// Everything here is reconstructed from syntax, so it renders `dynamic` and
 /// never claims to know a type. The one exception is widget-ness, for the
@@ -20,9 +24,12 @@
 class SyntheticShimEmitter {
   /// The live set of names the isolated file declares by inlining. Read at
   /// [render] time so a name inlined after the request still wins.
-  SyntheticShimEmitter(this._alreadyDeclared);
+  SyntheticShimEmitter(this._alreadyDeclared, this._defaults);
 
   final Set<String> _alreadyDeclared;
+
+  /// Records that this emitter reached for a stub, so the file declares one.
+  final DefaultValues _defaults;
 
   /// Extension members to declare, keyed by the type they extend and then by
   /// member name.
@@ -108,6 +115,10 @@ class SyntheticShimEmitter {
       final names = members.keys.toList()..sort();
       final rendered = names.map((n) => members[n]!.render()).toList();
       if (rendered.isEmpty) continue;
+      // Every synthesised member hands back a stub, so the file has to declare
+      // one. Recorded here rather than inside the member, which has no view of
+      // the file it lands in.
+      _defaults.forTypeOrNull('dynamic');
       bodies.add(
         'extension _Spm${_sanitize(onType)}Shim on $onType {\n'
         '${rendered.join('\n')}\n'
@@ -125,7 +136,12 @@ class SyntheticShimEmitter {
         _globals.where((n) => !taken(n) && !_classes.containsKey(n)).toList()
           ..sort();
     for (final name in globals) {
-      bodies.add('late dynamic $name;');
+      // A stub rather than an unassigned `late` or a null. These names are read
+      // as member chains (`p.join(dir, file)`, `currentUserId.isEmpty`), and
+      // both of the alternatives throw at the first hop: one before the first
+      // frame, the other during build.
+      final value = _defaults.forTypeOrNull('dynamic');
+      bodies.add('dynamic $name = ${value.expression};');
     }
 
     if (bodies.isEmpty) return '';
@@ -232,7 +248,7 @@ class _ExtensionMember {
 
   String render() {
     if (isGetter) {
-      return '  dynamic get $name => throw UnimplementedError();';
+      return '  dynamic get $name => const $stubClassName();';
     }
     final typeParams = typeArgumentCount == 0
         ? ''
@@ -243,7 +259,7 @@ class _ExtensionMember {
         '{${(named.toList()..sort()).map((n) => 'dynamic $n').join(', ')}}',
     ];
     return '  dynamic $name$typeParams(${parameters.join(', ')}) =>'
-        ' throw UnimplementedError();';
+        ' const $stubClassName();';
   }
 }
 

@@ -61,8 +61,8 @@ class CtorInitListState extends State<CtorInitList> {
   Widget build(BuildContext context) => Text('$_doubled');
 }
 
-/// Minimal stand-in so the fixture resolves without Riverpod, mirroring the
-/// mock in `patterns.dart`.
+/// Minimal stand-in so the fixture resolves without the package that declares
+/// this widget, mirroring the one in `patterns.dart`.
 class ConsumerWidget {
   const ConsumerWidget({this.key});
 

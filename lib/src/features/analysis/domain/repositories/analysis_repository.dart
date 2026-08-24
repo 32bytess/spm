@@ -9,7 +9,11 @@ abstract class AnalysisRepository {
   /// Returns:
   /// - An [AnalysisStream] containing a stream of [AnalysisResultEntity].
   ///
-  AnalysisStream analyze(RepositoryPaths repoDirs, {Set<String>? scopeTypes});
+  AnalysisStream analyze(
+    RepositoryPaths repoDirs, {
+    Set<String>? scopeTypes,
+    String? packageConfigFile,
+  });
 
   /// Saves the analysis results to a specified file path.
   ///

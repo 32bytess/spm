@@ -5,10 +5,12 @@ import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
 import 'package:path/path.dart' as p;
+import 'package:spm/src/core/rebuild_path.dart';
 import 'package:spm/src/features/isolation/data/data_sources/emitters/import_collector.dart';
 import 'package:spm/src/features/isolation/data/data_sources/emitters/shim_emitter.dart';
 import 'package:spm/src/features/isolation/data/data_sources/emitters/synthetic_shim_emitter.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/declaration_names.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/default_values.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/flutter_namespace.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/inline_budget.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
@@ -97,6 +99,23 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
   /// third-party declaration must not be inlined under.
   final FlutterNamespace flutterNames;
 
+  /// What the isolated file can build a value of, so an inlined declaration is
+  /// recorded alongside the stand-ins.
+  final DefaultValues defaults;
+
+  /// Source edits applied to everything this visitor carries.
+  final List<SourceRewriter> rewriters;
+
+  /// Whether to stop at code that cannot run during a rebuild.
+  ///
+  /// `spm analyze` never walks an `onPressed` body, so nothing inside one can
+  /// move a feature. Crawling it anyway is what carries a navigation target's
+  /// whole class into the file, or stands in for the services it calls, and
+  /// then loses the scope to an error in code the metrics never read.
+  ///
+  /// False reproduces the traversal as it was before the prune existed.
+  final bool pruneNonRebuild;
+
   DependencyExtractorVisitor(
     this.originResult,
     this.enclosingClass,
@@ -109,9 +128,21 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     this.inlineThirdParty = true,
     InlineBudget? budget,
     this.flutterNames = FlutterNamespace.empty,
+    DefaultValues? defaults,
+    this.rewriters = const [],
+    this.pruneNonRebuild = true,
   }) : _session = session,
        budget = budget ?? InlineBudget(),
+       defaults = defaults ?? DefaultValues(),
        emittedNames = emittedNames ?? <String>{};
+
+  /// Carries the declaration of a type the transplant writes down.
+  ///
+  /// The visitor otherwise learns about a type by walking a reference to it in
+  /// the copied source. A lifted binding's declared type has no such reference:
+  /// it is rendered from the resolved type, and the only mention of the name
+  /// may have been in a body the prune erased.
+  void handleTypeElement(Element element) => _handleElement(element);
 
   /// Returns true if the [filePath] belongs to the local project (not a package or SDK).
   bool isProjectLocal(String filePath) {
@@ -406,9 +437,13 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     // counts MORE than the in-place row for the same scope, not less. Worth
     // stating rather than discovering: the two numbers are not comparable
     // across this boundary in either direction.
+    // The material-name guard used to sit here, refusing to carry any
+    // declaration whose name material also exports. It no longer does: the
+    // declaration is carried under a mangled name instead, and
+    // `NamespaceRenamer` rewrites only the references that resolve to it. See
+    // `flutter_namespace.dart`.
     if (inlineThirdParty &&
         !budget.exhausted &&
-        !flutterNames.contains(name) &&
         elementProducesUi(target ?? element)) {
       if (alreadySeen) return;
       crossFileRefs.add((
@@ -508,14 +543,15 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     if (enclosingClass != null) {
       for (final member in (enclosingClass!.body as BlockClassBody).members) {
         if (member is MethodDeclaration && member.name.lexeme == name) {
-          memberCode += '\n${Skeletonizer.skeletonize(member, originResult)}\n';
+          memberCode +=
+              '\n${Skeletonizer.skeletonize(member, originResult, rewriters: rewriters)}\n';
           member.accept(this);
           return true;
         } else if (member is FieldDeclaration) {
           for (final variable in member.fields.variables) {
             if (variable.name.lexeme == name) {
               memberCode +=
-                  '\n${Skeletonizer.skeletonize(member, originResult)}\n';
+                  '\n${Skeletonizer.skeletonize(member, originResult, rewriters: rewriters)}\n';
               member.accept(this);
               return true;
             }
@@ -535,16 +571,22 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
       // of it in the transplanted code. Both fall back to the stand-in the
       // caller emits when this returns false.
       if (!_originIsProjectLocal) {
-        if (flutterNames.contains(name)) return false;
-        final source = Skeletonizer.skeletonize(decl, originResult);
+        final source = Skeletonizer.skeletonize(
+          decl,
+          originResult,
+          rewriters: rewriters,
+        );
         if (!budget.take(source.length)) return false;
         classCode += '\n$source\n';
+        registerInlinedDeclaration(decl, defaults);
         emittedNames.addAll(declaredNames(decl));
         decl.accept(this);
         return true;
       }
 
-      classCode += '\n${Skeletonizer.skeletonize(decl, originResult)}\n';
+      classCode +=
+          '\n${Skeletonizer.skeletonize(decl, originResult, rewriters: rewriters)}\n';
+      registerInlinedDeclaration(decl, defaults);
       emittedNames.addAll(declaredNames(decl));
       decl.accept(this);
       return true;
@@ -670,9 +712,9 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
   /// Records an unresolved `receiver.name(...)` as an extension method.
   ///
   /// `context.read<T>()` is the case this exists for. The extension that
-  /// defines `read` lives in provider or flutter_bloc, which the import gate
+  /// defines `read` lives in a state-management package, which the import gate
   /// refuses, so the reference has nowhere to resolve. Restoring it as an
-  /// extension on `BuildContext` names neither package and covers `watch` and
+  /// extension on `BuildContext` names no package and covers `watch` and
   /// `select` by the same rule, along with `10.sp` on `num` and any other
   /// extension a package hangs off an SDK type.
   void _handleUnresolvedInvocation(MethodInvocation node) {
@@ -811,8 +853,27 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
     return false;
   }
 
+  /// Does not descend into a closure that cannot run during a rebuild.
+  ///
+  /// The body is erased from the copied source by [NonRebuildBodyEraser], so
+  /// nothing it names is left to dangle. Both halves have to move together: the
+  /// gate alone would leave the names in the file with no declaration, and the
+  /// erasure alone would carry dependencies for source that is gone.
+  @override
+  void visitFunctionExpression(FunctionExpression node) {
+    if (pruneNonRebuild && isNonRebuildCallback(node)) return;
+    super.visitFunctionExpression(node);
+  }
+
   @override
   void visitSimpleIdentifier(SimpleIdentifier node) {
+    // A bare reference in a handler slot, `onPressed: _handleSubmit`, is NOT
+    // skipped here even though `BuildMetricsVisitor` declines to walk what it
+    // names. The two commands are answering different questions: analyze asks
+    // whether the body counts, and the answer is no; isolate asks whether the
+    // name resolves, and the answer has to stay yes or the file will not
+    // compile. What the body costs is dealt with where the member is written
+    // out, by emitting its signature without it.
     if (_elementOf(node) == null && !_isQualifiedTail(node)) {
       // Locals and parameters resolve even in a project whose dependencies are
       // missing, so an unresolved bare identifier is a genuinely free name.

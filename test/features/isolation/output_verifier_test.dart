@@ -24,36 +24,41 @@ void main() {
       expect(json.containsKey('warningCount'), isFalse);
     });
 
-    test('output with no package config anywhere is unverified, not clean', () async {
-      // `Directory.systemTemp` sits outside any package, so nothing above the
-      // output directory can lend it a package config and `package:flutter`
-      // cannot resolve. Every verdict in here has to be unverified.
-      final outputDir = Directory.systemTemp.createTempSync('spm_verify_test');
-      addTearDown(() => outputDir.deleteSync(recursive: true));
+    test(
+      'output with no package config anywhere is unverified, not clean',
+      () async {
+        // `Directory.systemTemp` sits outside any package, so nothing above the
+        // output directory can lend it a package config and `package:flutter`
+        // cannot resolve. Every verdict in here has to be unverified.
+        final outputDir = Directory.systemTemp.createTempSync(
+          'spm_verify_test',
+        );
+        addTearDown(() => outputDir.deleteSync(recursive: true));
 
-      final sourceDir = Directory.systemTemp.createTempSync('spm_verify_src');
-      addTearDown(() => sourceDir.deleteSync(recursive: true));
+        final sourceDir = Directory.systemTemp.createTempSync('spm_verify_src');
+        addTearDown(() => sourceDir.deleteSync(recursive: true));
 
-      final file = File(p.join(outputDir.path, 'scope.dart'))
-        ..writeAsStringSync(
-          "import 'package:flutter/material.dart';\n"
-          'class GeneratedWidget extends StatelessWidget {\n'
-          '  const GeneratedWidget({super.key});\n'
-          '  @override\n'
-          '  Widget build(BuildContext context) => const SizedBox();\n'
-          '}\n',
+        final file = File(p.join(outputDir.path, 'scope.dart'))
+          ..writeAsStringSync(
+            "import 'package:flutter/material.dart';\n"
+            'class GeneratedWidget extends StatelessWidget {\n'
+            '  const GeneratedWidget({super.key});\n'
+            '  @override\n'
+            '  Widget build(BuildContext context) => const SizedBox();\n'
+            '}\n',
+          );
+
+        final results = await OutputVerifier().verify(
+          outputDir: outputDir.path,
+          sourceDirectories: [sourceDir.path],
         );
 
-      final results = await OutputVerifier().verify(
-        outputDir: outputDir.path,
-        sourceDirectories: [sourceDir.path],
-      );
-
-      final verdict = results[file.path];
-      expect(verdict, isNotNull);
-      expect(verdict!.wasVerified, isFalse);
-      expect(verdict.isClean, isFalse);
-    });
+        final verdict = results[file.path];
+        expect(verdict, isNotNull);
+        expect(verdict!.wasVerified, isFalse);
+        expect(verdict.isClean, isFalse);
+      },
+    );
   });
 
   group('the verifier does not rewrite what it reads', () {

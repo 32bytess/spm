@@ -45,6 +45,16 @@ class AnalysisCommand extends Command<int> {
             'Rebuild scope types to extract. Defaults to all of: '
             '${AppConstants.rebuildScopeTypes.join(', ')}.',
         allowed: AppConstants.rebuildScopeTypes,
+      )
+      ..addOption(
+        'package-config',
+        help:
+            'The resolved .dart_tool/package_config.json to read every library '
+            'outside the analysed directories against. Defaults to the one '
+            'above the first directory. Pin it across a history walk: package '
+            'source now contributes to the metrics, so two revisions whose '
+            'pubspec.lock moved would otherwise show a feature delta with no '
+            'source edit between them.',
       );
   }
 
@@ -72,6 +82,10 @@ class AnalysisCommand extends Command<int> {
     final selectedTypes = argResults!['scope-types'] as List<String>;
     // No selection means every scope type; an explicit list narrows it.
     final scopeTypes = selectedTypes.isEmpty ? null : selectedTypes.toSet();
+    final packageConfig = argResults!['package-config'] as String?;
+    if (packageConfig != null && !File(packageConfig).existsSync()) {
+      usageException('Package config does not exist: $packageConfig');
+    }
 
     if (verbose) {
       SpmLogger.logMessage('Analyzing directories: ${repoDirs.join(', ')}');
@@ -88,7 +102,12 @@ class AnalysisCommand extends Command<int> {
     );
     var analysisFailed = false;
 
-    await for (final event in analyzer.call(repoDirs, scopeTypes: scopeTypes)) {
+    final events = analyzer.call(
+      repoDirs,
+      scopeTypes: scopeTypes,
+      packageConfigFile: packageConfig,
+    );
+    await for (final event in events) {
       event.fold(
         (Failure failure) {
           analysisFailed = true;

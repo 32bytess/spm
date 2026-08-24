@@ -10,5 +10,8 @@ abstract class IsolationRepository {
     required String outputDir,
     String? jsonlPath,
     bool inlineThirdParty,
+    int inlineMaxDeclarations,
+    int inlineMaxCharacters,
+    bool pruneNonRebuild,
   });
 }

@@ -27,7 +27,7 @@ import 'utils/temp_project.dart';
 /// and all, and would satisfy the bound. Across a file boundary the transplant
 /// applies its UI filter, this builds nothing, and what lands in the output is
 /// `class LocalModel {}` with no supertype at all. That is the same thing that
-/// happens to the `ChangeNotifier` subclasses a real app hands to `provider`.
+/// happens to any repo-local class a package widget's bound is written against.
 const String _modelSource = '''
 import 'package:ui_kit/ui_kit.dart';
 

@@ -85,6 +85,36 @@ class AppConstants {
     'Observer',
   };
 
+  /// Named-argument labels whose closure runs on user interaction rather than
+  /// during a rebuild: `onPressed`, `onTap`, `onChanged` and the rest of the
+  /// family. A rebuild never runs those bodies, so their cost is not the
+  /// scope's cost.
+  static final RegExp eventHandlerLabel = RegExp(r'^on[A-Z]');
+
+  /// Named-argument labels that are not build work either, and that
+  /// [eventHandlerLabel] does not cover.
+  static const Set<String> nonRebuildCallbackLabels = {
+    'validator',
+    'onError',
+    'onDone',
+    'onCancel',
+    'confirmDismiss',
+  };
+
+  /// Invocations and constructors whose callback argument is invoked later,
+  /// off the build path. Matched by method name, by `Type.constructor`, and by
+  /// bare type name, so `Timer(...)` and `Timer.periodic(...)` both qualify.
+  static const Set<String> nonRebuildCallbackHosts = {
+    'then',
+    'catchError',
+    'whenComplete',
+    'addListener',
+    'addPostFrameCallback',
+    'scheduleMicrotask',
+    'Future.delayed',
+    'Timer',
+  };
+
   /// Scope type recorded for Flutter `State` subclasses.
   static const String stateScopeType = 'State';
 
