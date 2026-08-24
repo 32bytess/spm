@@ -31,6 +31,24 @@ typedef ClosureSet = ({
   /// carrying an error-severity diagnostic. Paths where one is known, library
   /// URIs otherwise.
   List<String> unresolvedDependencies,
+
+  /// The resolved version of every package a closure file came out of, keyed by
+  /// package name.
+  ///
+  /// A package version is an input to the feature values now that the extractor
+  /// reads a package library, so two runs over one project whose `pubspec.lock`
+  /// moved between them can differ with no source edit to explain it. The
+  /// answer is to pin one resolved package config across the runs, and this is
+  /// what makes that pin auditable: two runs that somehow read different
+  /// versions are visible rather than silent.
+  Map<String, String> packageVersions,
+
+  /// The non-SDK classes whose `build` bodies were walked, as `libraryUri#Name`.
+  ///
+  /// The other half of the agreement check against `spm isolate`: for every
+  /// declaration walked here, the transplant of the same scope has to carry the
+  /// source, or the two rows describe different trees.
+  List<String> walkedWidgetClasses,
 });
 
 /// What [TreeExtractor.extract] returns: the feature vector, plus the evidence

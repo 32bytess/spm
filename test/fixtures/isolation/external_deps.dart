@@ -74,9 +74,18 @@ BoxDecoration buildExternalDecoration() =>
 // Helper constant in another file
 const kExternalColor = Colors.red;
 
-// Helper function in another file (should NOT be included)
+// Helper function in another file, reached only from an event handler. Its
+// declaration is not needed either: the member that called it is written out
+// without a body, so nothing in the isolated file names this at all.
 void externalHelper() {
   print('External helper called');
+}
+
+// Helper function in another file, reached from build(). Produces no UI, so a
+// declaration-only stand-in cannot move any count, but the declaration itself
+// has to be there for the call to resolve.
+String externalLabel(int count) {
+  return 'external label $count';
 }
 
 // Not a widget, but hands one out. `tree_extractor` walks the body of every

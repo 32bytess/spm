@@ -8,7 +8,8 @@ import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:path/path.dart' as p;
 import 'package:spm/src/core/errors/exceptions.dart';
 import 'package:spm/src/features/isolation/data/data_sources/extractors/transplant_extractor.dart';
-import 'package:spm/src/features/isolation/data/data_sources/helpers/package_config.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/inline_budget.dart';
+import 'package:spm/src/core/analysis/package_config.dart';
 import 'package:spm/src/features/isolation/data/data_sources/isolation_data_source.dart';
 import 'package:spm/src/features/isolation/data/data_sources/sets/isolation_match_set.dart';
 import 'package:spm/src/features/isolation/data/data_sources/verifier/output_verifier.dart';
@@ -74,8 +75,8 @@ class IsolationDataSourceImpl implements IsolationDataSource {
       // Existence is not resolution. The config this method writes below when
       // pub fails satisfies this check, so a second run over the same checkout
       // used to sail past it: the flag fired once, on the run that created the
-      // file, and never again. In a history walk, where a worktree keeps its
-      // `.dart_tool` across checkouts, that is every revision after the first.
+      // file, and never again. Over repeated runs against a worktree that keeps
+      // its `.dart_tool` across checkouts, that is every run after the first.
       if (isSynthesisedConfig(configFile)) _degradedProjects.add(dir);
       return;
     }
@@ -153,13 +154,13 @@ class IsolationDataSourceImpl implements IsolationDataSource {
   ///
   /// Carrying a third-party widget's tree is the better answer when it works,
   /// and it does not always work. A package's own generics are the recurring
-  /// reason: inlining `provider` brings across
-  /// `ChangeNotifierProvider<T extends ChangeNotifier?>` with its real bound,
-  /// and the repo-local `AuthProvider` that satisfies it in the original app is
-  /// a stand-in here with no supertype at all, so a file that used to type-check
-  /// against a stand-in's `dynamic` now does not. Merged imports are the other:
-  /// two package files that each imported one of `dart:developer` and
-  /// `dart:math` are fine apart and ambiguous about `log` together.
+  /// reason: inlining a widget declared as `Wrapper<T extends ChangeNotifier?>`
+  /// brings its real bound across, and the repo-local class that satisfies that
+  /// bound in the original app is a stand-in here with no supertype at all, so
+  /// a file that used to type-check against a stand-in's `dynamic` now does
+  /// not. Merged imports are the other: two package files that each imported
+  /// one of `dart:developer` and `dart:math` are fine apart and ambiguous about
+  /// `log` together.
   ///
   /// Neither is worth guessing at from the source. Analysing both answers and
   /// keeping the better one makes the guarantee exact: no scope ends up with
@@ -180,6 +181,7 @@ class IsolationDataSourceImpl implements IsolationDataSource {
     required List<Map<String, dynamic>> mapping,
     required String outputDir,
     required List<String> directories,
+    required bool pruneNonRebuild,
   }) async {
     final candidates = rewritable.where((scope) {
       final verification = verifications[scope.targetPath];
@@ -201,6 +203,7 @@ class IsolationDataSourceImpl implements IsolationDataSource {
           scope.result,
           scope.session,
           inlineThirdParty: false,
+          pruneNonRebuild: pruneNonRebuild,
         );
         inlined[scope.targetPath] = File(scope.targetPath).readAsStringSync();
         File(scope.targetPath).writeAsStringSync(fallback.source);
@@ -248,6 +251,9 @@ class IsolationDataSourceImpl implements IsolationDataSource {
     required String outputDir,
     String? jsonlPath,
     bool inlineThirdParty = true,
+    int inlineMaxDeclarations = InlineBudget.defaultMaxDeclarations,
+    int inlineMaxCharacters = InlineBudget.defaultMaxCharacters,
+    bool pruneNonRebuild = true,
   }) async* {
     _degradedProjects.clear();
 
@@ -322,6 +328,9 @@ class IsolationDataSourceImpl implements IsolationDataSource {
             result,
             context.currentSession,
             inlineThirdParty: inlineThirdParty,
+            inlineMaxDeclarations: inlineMaxDeclarations,
+            inlineMaxCharacters: inlineMaxCharacters,
+            pruneNonRebuild: pruneNonRebuild,
           );
 
           final safeName = match.name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '_');
@@ -372,6 +381,26 @@ class IsolationDataSourceImpl implements IsolationDataSource {
             // than the same scope would in place, and that is not something a
             // reader should have to infer from a count.
             if (transplant.truncated) 'thirdPartyInlineTruncated': true,
+            // Named rather than counted: the name is what a human filling in
+            // the fixture block needs, and a file with any of these still
+            // throws before its first frame.
+            if (transplant.unseededBindings.isNotEmpty)
+              'unseededBindings': transplant.unseededBindings,
+            'fixtureConstructor': transplant.hasFixtureConstructor,
+            if (transplant.droppedLoadingBuilders > 0)
+              'droppedLoadingBuilders': transplant.droppedLoadingBuilders,
+            if (transplant.carriedUiDeclarations.isNotEmpty)
+              'carriedUiDeclarations': transplant.carriedUiDeclarations,
+            if (transplant.renamedThirdPartyDeclarations.isNotEmpty)
+              'renamedThirdPartyDeclarations':
+                  transplant.renamedThirdPartyDeclarations,
+            // What the prune removed. Both are zero-or-absent on a run given
+            // --no-prune-non-rebuild, which is what makes a corpus mined with
+            // and without it comparable row by row.
+            if (transplant.erasedNonRebuildBodies > 0)
+              'erasedNonRebuildBodies': transplant.erasedNonRebuildBodies,
+            if (transplant.droppedUnreachableMembers.isNotEmpty)
+              'droppedUnreachableMembers': transplant.droppedUnreachableMembers,
           });
           isolatedCount++;
         }
@@ -394,6 +423,7 @@ class IsolationDataSourceImpl implements IsolationDataSource {
       mapping: mapping,
       outputDir: outputDir,
       directories: directories,
+      pruneNonRebuild: pruneNonRebuild,
     );
 
     var verifiedCount = 0;
@@ -405,6 +435,13 @@ class IsolationDataSourceImpl implements IsolationDataSource {
       errorCount += verification.errorCount;
       if (verification.isClean) cleanCount++;
     }
+    // Reverting is a defect count, not an achievement. A reverted scope carries
+    // a smaller tree than the same scope analysed in place, which is the wrong
+    // direction when the two are meant to describe the same thing, so the rate
+    // is reported and such a row is one to exclude rather than to compare.
+    final revertedCount = mapping
+        .where((row) => row['thirdPartyInlineReverted'] == true)
+        .length;
 
     // Save the mapping to a JSONL file if requested
     if (jsonlPath != null) {
@@ -427,6 +464,7 @@ class IsolationDataSourceImpl implements IsolationDataSource {
       verifiedCount: verifiedCount,
       cleanCount: cleanCount,
       errorCount: errorCount,
+      revertedCount: revertedCount,
     );
   }
 }

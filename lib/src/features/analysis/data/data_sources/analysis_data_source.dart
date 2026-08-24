@@ -7,10 +7,15 @@ abstract class AnalysisDataSource {
   /// Parameters:
   /// - [repoDirs]: A list of directory paths where the repositories are located.
   /// - [scopeTypes]: Rebuild scope types to keep; null keeps every type.
+  /// - [packageConfigFile]: the resolved `package_config.json` every library
+  ///   outside [repoDirs] is read against. Defaults to the one above the first
+  ///   directory. Pinning it keeps a package version from becoming a silent
+  ///   input to the metrics across repeated runs over the same project.
   ///
   AnalysisEventStream analyzeDirs(
     RepositoryPaths repoDirs, {
     Set<String>? scopeTypes,
+    String? packageConfigFile,
   });
 
   /// Saves the analysis results to a specified file path.

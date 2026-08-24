@@ -7,9 +7,8 @@
 /// `dependency_extractor_visitor.dart`; this only decides what may be imported
 /// rather than carried. The trailing slash is what makes
 /// this a Flutter SDK test rather than a "starts with the word flutter" test.
-/// Without it `package:flutter_bloc`, `package:flutter_riverpod`,
-/// `package:flutter_scale_kit` and every other `flutter_`-prefixed pub package
-/// read as SDK libraries, get imported instead of shimmed, and leave the
-/// isolated file depending on packages that are not there.
+/// Without it every pub package whose name merely begins with `flutter_` reads
+/// as an SDK library, gets imported instead of shimmed, and leaves the isolated
+/// file depending on a package that is not there.
 bool isSdkLibrary(String uri) =>
     uri.startsWith('dart:') || uri.startsWith('package:flutter/');

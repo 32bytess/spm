@@ -1,5 +1,192 @@
 # Changelog
 
+## 0.7.0
+
+Everything since 0.6.0. Two things carry the release. `spm analyze` reads a library outside the
+analysed directories instead of dropping it and its whole subtree. And both commands stop counting
+the code a rebuild cannot run, which is what the body of an `onPressed` is.
+
+Every number `isolate` reported used to stop at `errorCount == 0`, a fact about the analyzer rather
+than about the output, and three decisions in the emitters guaranteed that a clean-analysing file
+threw before its first frame. Most of what follows is what it takes to make the written file run
+rather than merely analyse.
+
+Reading a package library closes the asymmetry the 0.6.0 notes had to state out loud: a transplant
+that carried a package widget counted its subtree while the in-place row for the same scope did not,
+so the two sides of the comparison were not comparable in either direction.
+
+Output cannot be pooled with 0.6.0's on either side. The emitter produces a different file for the
+same scope, and `TreeExtractor` produces different metrics for the same code. That second half is
+new: until this release only the isolate output carried a pooling warning.
+
+### Added
+
+- `--[no-]prune-non-rebuild` on `isolate`, on by default. `--no-prune-non-rebuild` reproduces the
+  unpruned output, so a run made with and without it is a controlled comparison rather than an
+  assertion. Across 179 scopes, pruning takes the files that analyse clean from 25 to 46 and the
+  total error count from 2,793 to 1,253, and the 14 feature values are unchanged wherever both
+  settings produce a row: 32 of 32 shared scopes byte-identical, which is the invariant the prune is
+  allowed to be judged on. Rows go up, 45 to 62, because the files that now analyse contribute their
+  own scope. The rows that disappear are duplicate observations of a nested scope that already has a
+  transplant of its own.
+- `--package-config` on `analyze`. A package version is an input to the metrics now, so two runs
+  over one project whose `pubspec.lock` moved between them could differ with no source edit to
+  explain it. Pinning one resolved config removes that by construction. The cost is that a subtree
+  may be counted against a package version the checkout did not ship with, which is the right trade
+  when the question is about the project's own structure.
+- `--inline-max-declarations` and `--inline-max-characters` on `isolate`, with the caps raised from
+  200 and 200,000 to 2,000 and 2,000,000. The in-place walk has no cap at all now, so a scope that
+  exhausts this one undercounts against the row it is meant to be compared with. The counter stays,
+  as a number to report rather than a limit to aim at.
+- `GeneratedWidget.fixture()`, emitted beside the copied constructor. A scope whose widget declared
+  a required field could not be written as `GeneratedWidget()`, and mounting it meant building that
+  value first, which is a second fix point outside the fixture block and different for every scope.
+  The copied constructor stays, because it is part of the commit's source. A row says which it got
+  through `fixtureConstructor`.
+- Seven mapping fields on `isolate`. `unseededBindings` names the bindings no value could be built
+  for; `fixtureConstructor` says whether the fixture constructor was emitted;
+  `droppedLoadingBuilders` counts the one image argument that still cannot come across;
+  `carriedUiDeclarations` and `renamedThirdPartyDeclarations` record what was carried and under what
+  name; `erasedNonRebuildBodies` counts the closure bodies emptied; and `droppedUnreachableMembers`
+  names the members left out. That last one is named rather than counted, because a member missing
+  that should not be is the failure mode of the prune and a count cannot say which one. The run also
+  reports how many scopes gave their third-party source back.
+- Two analyze fields. `packageVersions` records the resolved version of every package the closure
+  entered, so the pin above is auditable, and `walkedWidgetClasses` records the non-SDK classes
+  walked in place. The second is the other half of a check that could not be computed before: for
+  every declaration `analyze` walks, `isolate` has to carry the source, or the two rows describe
+  different trees.
+
+### Changed
+
+- A closure a rebuild cannot run is no longer entered by `analyze`. Its widgets, allocations,
+  iterations, helper references and decision points stay out of the row, and a custom widget built
+  inside it no longer seeds the child traversal. Three shapes qualify: a named argument whose label
+  is `on` followed by a capital, a named argument called `validator`, `onError`, `onDone`,
+  `onCancel` or `confirmDismiss`, and an argument to `then`, `catchError`, `whenComplete`,
+  `addListener`, `addPostFrameCallback`, `scheduleMicrotask`, `Future.delayed` or `Timer`. A
+  tear-off in one of those slots is treated the same way, and a local function reachable only from
+  one is dropped rather than read at the end of the traversal. **Every feature is smaller than 0.6.0
+  reported it for any scope holding a handler**, and the reason is that a handler body is not
+  rebuild cost: an `onPressed` that pushes a route used to merge a whole other screen's build tree
+  into the scope, charging a rebuild for a page it never renders.
+- Everything else is still entered: `builder`, `itemBuilder`, `separatorBuilder`, the builder
+  callbacks of the supported scope widgets, positional ones included, and any expression in a
+  handler slot that is not itself a closure, since a conditional tear-off is evaluated while the
+  tree is built.
+- `analyze` reads a library outside the analysed directories. `contextFor` throws `StateError` for
+  any path in the pub cache, the throw was swallowed, the entry cached as a miss, and the child
+  dropped along with its whole subtree. A per-package-root context collection built against the
+  application's own package config fixes it. Nothing walks the cache: only the libraries the
+  traversal actually enters are resolved. The framework boundary is unchanged and stays a
+  correctness decision rather than a cost one, because the visitor counts every branch of a build
+  body rather than the branch that ran.
+- A library that resolves with errors is now refused, as one that does not resolve at all already
+  was. Its types come back null, so its widgets classify as value objects: the row was wrong rather
+  than short, which is the trade the scanned-file gate exists to prevent. Repo-local numbers move
+  because of this, and `unresolvedDependencies` names what was refused.
+- Carrying a package widget is now what makes the isolated row and the in-place row describe the
+  same tree, where up to 0.6.0 it did the opposite. Where they still cannot, the row says so:
+  `thirdPartyInlineTruncated`, `thirdPartyInlineReverted`, and `carriedUiDeclarations` against the
+  analyze row's `walkedWidgetClasses`.
+- Reverting an unprofitable inline is a defect count rather than an achievement. It buys a readable
+  file by shrinking the tree, which is the wrong direction when the isolated row and the in-place
+  row are meant to describe the same thing. The rate is reported, and such a row is one to exclude
+  rather than to compare.
+- A third-party declaration whose name `package:flutter/material.dart` also exports is carried under
+  a mangled name rather than stood in for, and only the references that resolve to it are rewritten.
+  The guard's reasoning is unchanged: an inlined third-party `Card` would put a body under every
+  `Card(...)` in the transplanted body, including the ones that meant Flutter's. What changes is
+  that honouring it no longer costs the subtree.
+- A widget stand-in renders its `child`, `children` or `body` instead of swallowing it. The
+  constructor accepted the argument and the class built `const SizedBox.shrink()`, so whatever tree
+  was passed in was constructed and then never mounted, laid out or painted. `children` wraps in
+  `Stack` and not `Column`: `Column` with a non-literal `children:` pins `treeListRenderingStrategy`
+  at its ceiling for every scope reaching such a stand-in, in the transplant and nowhere else.
+- Stand-in parameter types are `dynamic`. Rendering a type by its nearest nameable supertype while
+  the argument at the call site was a stand-in with none is what produced most of the output's
+  error-severity diagnostics. Return and field types degrade too, unless the type reaches `Widget`
+  directly or as an iterable's element, which is the property the widget-returning-helper rule
+  depends on.
+- A non-widget stand-in declares its nearest nameable supertype, which carries generic bounds a
+  `dynamic` parameter cannot. Members the supertype supplies are not redeclared beside it.
+- A stand-in emits every constructor, whatever the member limit says. The two were gated on the same
+  flag, so a type over the limit emitted none unless a reference reached one, and a call site's
+  named arguments then landed on the implicit default constructor.
+- Bindings carry values instead of throwing. Unassigned `late` seeds, `throw UnimplementedError()`
+  bodies and unassigned `late dynamic` globals each threw on first read, and the reads are in
+  `initState` and `build`. A `dynamic` binding gets a `_Stub` rather than `null`, because the bodies
+  read member chains off these and a null only moves the crash from `initState` into `build`. This
+  reverses the emitters' stated preference for throwing over inventing, and the reason it is safe is
+  that a value is never measured: the features come from the shape of the build tree, and that shape
+  is fixed before any of this executes. Where no value of a binding's type can be built the old form
+  stays and the name is reported.
+- The image rewrite substitutes the source and keeps the node. Replacing the whole construction
+  erased `errorBuilder` subtrees, which in place are walked and counted, and turned an
+  `ImageProvider` into a widget, moving the same source out of `valueObjectAllocCount` into
+  `treeNonConstWidgetCount` and adding a level of depth. It also put a widget in a provider-typed
+  slot, which `BoxDecoration(image:)` and `CircleAvatar(backgroundImage:)` reject.
+  `loadingBuilder` has no home on `Image.asset` and is the one argument that still drops; it is
+  counted and the file carries a marker where it stood.
+- A closure `isolate` transplants into a non-rebuild slot keeps its signature, its `async` modifier
+  and its place in the tree, and loses its body. The body becomes an empty block where the closure
+  returns nothing and a throw where it returns a value: `{}` completes with null, which a
+  `String? validator` tolerates and a `Future<bool> confirmDismiss` does not. The distinction is not
+  pedantry. The same family covers `then`, `addListener`, `addPostFrameCallback`,
+  `scheduleMicrotask`, `Timer` and `Future.delayed`, and those bodies do run, moments after the
+  scope mounts, so throwing in one would trade an analyzer error for an uncaught exception around
+  the first frame.
+- A member of the scope's class that `build()` cannot reach is dropped. A member only a tear-off
+  names keeps its signature and loses its body: the reference is evaluated while the tree is built,
+  so the name has to resolve. Carrying those members is what used to pull whole navigation targets
+  into the file and stand in for the services they called, and a stand-in whose signature then
+  failed to type-check cost the file outright, because `analyze` skips any file carrying an
+  error-severity diagnostic.
+- `initState` and `didChangeDependencies` are dropped like any other member `build` cannot reach,
+  and what they seeded moves to the fixture block. A `late final` field the original `initState`
+  assigned is now assigned from a top-level fixture symbol declared at the bottom of the file beside
+  the bindings lifted from the application. The generated `initState` does the seeding and nothing
+  else, so the network calls, listener registrations and notification setup that used to sit beside
+  it, and every stand-in they dragged in, are gone. Keeping those two methods was the first answer
+  and it was the wrong one: what they contribute is a value, and supplying a value is something the
+  transplant already knew how to do.
+- Every dependency is now a `late` binding seeded from the block, not only the ones a dropped member
+  used to assign. A field the scope declared with its own value, `int _limit = 20;`, becomes
+  `late int _limit;` in the State, `_limit = fixtureLimit;` in the generated `initState`, and
+  `int fixtureLimit = 20;` at the top level of the file. The value is relocated, never replaced: a
+  list seeded with twenty rows still builds twenty. The fixture block is therefore the whole of a
+  scope's initial state, in one region, at the top level of the file, which is what lets two
+  revisions of one scope be mounted from identical values.
+- `final` is dropped from a hoisted binding. A member the prune keeps may still assign the field,
+  and `late final` would make that a second write to a final.
+- Three kinds of field stay where they are, and every reason is about not moving a feature. `static`
+  and `const` fields, because `treeConstWidgetCount` and `rootBuildReturnsConstWidget` are features
+  and a `static const` read inside a `const` constructor stops the call being const the moment it
+  becomes a variable. A field whose initialiser needs the instance, such as one reading
+  `widget.arguments`, because it cannot be evaluated at the top level. And a field with no nameable
+  type, because the fixture declaration has to write the type down.
+- A generated default no longer names a type argument the file does not declare. A typed empty list
+  against a type nothing carried is an error-severity diagnostic, and the untyped literal infers the
+  same thing from the context every one of these sits in. This applies with the prune off too.
+- The declared type of a lifted binding is requested from the crawl outright. It is rendered from
+  the element model rather than from the copied source, so the crawl used to reach it only by
+  accident, through some other mention, and a handler body was often the only one.
+- Overlapping source edits resolve outermost-first rather than corrupting each other. Edits now come
+  from several independent rewriters, and a nested one could not survive the right-to-left pass.
+- The rebuild-path predicate is one helper in `core`, shared by `analyze` and `isolate`, so the two
+  commands cannot drift on which callbacks a rebuild runs.
+
+### Fixed
+
+- A prefix from a package the isolated file may not import no longer dangles. An SDK prefix such as
+  `dart:math as math` was restored and a package one was not, leaving the prefix undefined. It
+  becomes a `dynamic` stand-in, so a call through it compiles with no import at all. Restoring the
+  directive instead would be `uri_does_not_exist`, which is error severity too.
+- A stand-in no longer writes a parameter named after another library's private field.
+- The extractor's per-package-root context collections are released at the end of a run. Each one
+  runs a driver scheduler, and left alive they accumulate across runs in the same process, which a
+  single CLI invocation never notices and a test suite does.
+
 ## 0.6.0
 
 Everything since 0.5.2. Two changes carry the release, and both are about `isolate` writing a file
@@ -147,10 +334,9 @@ references to names nothing declares, so they cannot be pooled with 0.5.2 output
 
 - The gate that decides which libraries an isolated file may import tested `package:flutter` without
   the trailing slash, so every pub package whose name begins with `flutter` passed as an SDK
-  library. `flutter_bloc`, `flutter_riverpod`, `flutter_secure_storage`, `flutter_localizations`,
-  `flutter_scale_kit` and `fluttertoast` were among them: each was imported back into the isolated
-  file instead of being stood in for, leaving output that only resolves inside the project it came
-  from. Sizing extensions such as `.sp` and `.w` were the visible half of this, since the import
+  library. Each one was imported back into the isolated file instead of being stood in for, leaving
+  output that only resolves inside the project it came from. Sizing extensions such as `.sp` and
+  `.w` were the visible half of this, since the import
   that was supposed to define them does not exist where the file is read.
 - Import prefixes were dropped. A scope whose source read `import 'dart:math' as math;` was written
   out with a plain `import 'dart:math';`, so every `math.pi` and `math.Random()` in the transplanted
@@ -283,9 +469,9 @@ could be read.
   through a cache hit used to be recorded as clean, and a shared dependency appeared only on the
   first row that touched it.
 - `isolate` lifts the bindings a rebuild scope closed over. A builder callback reads parameters and
-  locals of the method it sits in, and a scope on a package-supplied base class such as `GetView`
-  reads members it inherits; neither travels with the transplanted source, so the isolated file
-  referenced names nothing declared.
+  locals of the method it sits in, and a scope on a package-supplied base class reads members it
+  inherits; neither travels with the transplanted source, so the isolated file referenced names
+  nothing declared.
 - Lifting a promoted parameter to a field costs it its promotion, because Dart does not promote
   fields. References whose promoted type was a proper subtype of the declared type are now wrapped,
   so `state.wallets` becomes `(state as WalletLoaded).wallets` and the isolated file still compiles.

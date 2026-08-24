@@ -40,19 +40,18 @@ class InlineHostState extends State<InlineHost> {
   static const FancySpec _spec = FancySpec(weight: 2);
   final FancyController _controller = FancyController();
 
-  @override
-  void initState() {
-    super.initState();
+  // On the rebuild path deliberately: the point of the assertions below is that
+  // an inherited member of a third-party stand-in resolves, and `spm isolate`
+  // no longer carries a body a rebuild cannot run, so a call parked in
+  // `initState` would not reach the stand-in at all.
+  Widget _tapped() {
     _controller.tap();
+    return Text('\${_spec.weight}');
   }
 
   @override
   Widget build(BuildContext context) => Column(
-    children: [
-      const FancyButton(label: 'go'),
-      const FancyPanel(),
-      Text('\${_spec.weight}'),
-    ],
+    children: [const FancyButton(label: 'go'), const FancyPanel(), _tapped()],
   );
 }
 ''';
@@ -147,12 +146,24 @@ void main() {
     expect(isolated, contains("Text('panel"));
   });
 
-  test('a name material exports is stood in for, not carried', () {
-    // `ui_kit` declares its own `Divider`. Inlining it would put a body behind
-    // a name the transplanted code may have meant Flutter's, and that body is
-    // then counted under every `Divider()` in the scope. Under-counting a name
-    // clash is recoverable; inventing widgets under one is not.
-    expect(isolated, isNot(contains("Text('ui_kit divider')")));
+  test('a name material exports is carried under a mangled name', () {
+    // `ui_kit` declares its own `Divider`. Carrying it under that name would
+    // put a body behind a name the transplanted code may have meant Flutter's,
+    // and that body is then counted under every `Divider()` in the scope.
+    //
+    // Standing it in used to be the answer and it cost the subtree. The
+    // declaration comes across under a mangled name instead, and only the
+    // references that resolve to `ui_kit`'s element are rewritten, so a
+    // `Divider()` that meant Flutter's still means Flutter's.
+    expect(isolated, contains(r'class Divider$spm extends StatelessWidget'));
+    expect(isolated, contains("Text('ui_kit divider')"));
+    expect(isolated, isNot(contains('class Divider extends StatelessWidget')));
+  });
+
+  test('the mangled name is reported on the row', () {
+    // The output no longer matches `git show` byte for byte at those points,
+    // and the fidelity audit measures exactly that.
+    expect(row['renamedThirdPartyDeclarations'], contains('Divider'));
   });
 
   test('a third-party value object is still stood in for', () {
@@ -160,7 +171,9 @@ void main() {
     // carrying it would be pure output size.
     expect(isolated, contains('class FancySpec'));
     expect(isolated, isNot(contains('class FancySpec extends')));
-    expect(isolated, contains('int get weight'));
+    // `dynamic`, because a member type only survives when it reaches `Widget`.
+    // The value still comes from the real type, so the call site gets an int.
+    expect(isolated, contains('dynamic get weight => 0;'));
   });
 
   test(

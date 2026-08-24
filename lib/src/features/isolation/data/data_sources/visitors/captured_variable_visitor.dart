@@ -2,7 +2,9 @@ import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/dart/element/type.dart';
 import 'package:path/path.dart' as p;
+import 'package:spm/src/core/rebuild_path.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 
 /// A name a rebuild scope reads without declaring it.
@@ -34,9 +36,10 @@ class CapturedVariable {
 ///    source range. `bool onlyNKN` on the method wrapping a `BlocBuilder` is
 ///    the canonical case.
 ///  * **Members inherited from a foreign supertype**: a getter or field whose
-///    enclosing class lives outside the project, as `controller` does on
-///    `GetView` from `package:get`. The transplant never emits such a class, so
-///    the member has to become a field of its own.
+///    enclosing class lives outside the project. A state-management package
+///    whose base widget hands its subclasses a `controller` getter is the
+///    recurring shape. The transplant never emits such a class, so the member
+///    has to become a field of its own.
 ///
 /// Names declared inside the scope, members of the enclosing class (the
 /// transplant copies those verbatim) and top-level declarations (the dependency
@@ -48,6 +51,7 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
     this.scopeOffset,
     this.scopeEnd, {
     Set<String> ignore = const {},
+    this.skipNonRebuildCallbacks = true,
   }) : _ignore = ignore;
 
   /// Analysis result for the file the scope was found in.
@@ -63,8 +67,25 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
   /// `context`.
   final Set<String> _ignore;
 
+  /// Whether a closure that cannot run during a rebuild is skipped.
+  ///
+  /// The transplant erases those bodies, so a name captured only by one would
+  /// become a `late` field seeded in the generated `initState` for code that is
+  /// no longer in the file. The lift has to see the source the way it will be
+  /// written, not the way it was read.
+  final bool skipNonRebuildCallbacks;
+
   final Map<String, CapturedVariable> _found = {};
   final Map<String, CapturedVariable> _globals = {};
+
+  /// Elements named by the declared types of everything captured.
+  ///
+  /// The transplant renders those types into field and seed declarations, so
+  /// the names have to resolve, and the crawl has no reference to walk: the
+  /// type came from the element model rather than from the copied source. It
+  /// used to be reached by accident through some other mention, and a body that
+  /// cannot run during a rebuild was often the only one.
+  final Set<Element> typeElements = {};
 
   /// Captured variables in declaration order, deduplicated by name.
   List<CapturedVariable> get captured {
@@ -88,6 +109,12 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
     final list = _globals.values.toList()
       ..sort((a, b) => a.name.compareTo(b.name));
     return list;
+  }
+
+  @override
+  void visitFunctionExpression(FunctionExpression node) {
+    if (skipNonRebuildCallbacks && isNonRebuildCallback(node)) return;
+    super.visitFunctionExpression(node);
   }
 
   @override
@@ -136,6 +163,17 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
         _typeOf(element) ?? 'dynamic',
         _globals.length,
       );
+    }
+  }
+
+  /// Records every named type inside [type], type arguments included.
+  void _collectTypeElements(Object? type) {
+    if (type is! DartType) return;
+    if (type is InterfaceType) {
+      typeElements.add(type.element);
+      for (final argument in type.typeArguments) {
+        _collectTypeElements(argument);
+      }
     }
   }
 
@@ -188,7 +226,8 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
   }
 
   /// True for a getter or field inherited from a third-party class, something
-  /// the transplant will never emit, such as `GetView.controller`.
+  /// the transplant will never emit, such as a `controller` getter a package's
+  /// base widget hands down.
   ///
   /// Members from `package:flutter` and `dart:` are excluded: the isolated file
   /// imports those, so `widget`, `mounted` and `context` on [State] resolve
@@ -236,7 +275,7 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
     return null;
   }
 
-  /// Canonical URI of the library declaring [element] (`package:get/get.dart`,
+  /// Canonical URI of the library declaring [element] (`package:foo/foo.dart`,
   /// `dart:ui`, or an absolute path for a file not reached through a package).
   String? _libraryUri(Element element) {
     try {
@@ -260,7 +299,7 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
   /// A getter's `type` is its *function* type (`Controller Function()`), not
   /// the value it yields, so accessors have to be read through `returnType`.
   /// Reading `type` first would send every inherited getter into the
-  /// `Function` guard below and drop it silently, with `GetView`'s
+  /// `Function` guard below and drop it silently, with an inherited
   /// `T get controller` the common casualty.
   String? _typeOf(Element element) {
     try {
@@ -270,6 +309,7 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
           : (typed.type ?? typed.returnType);
       if (type == null) return null;
       final display = type.getDisplayString() as String;
+      _collectTypeElements(type);
       // These carry no information worth pinning a field to.
       if (display.isEmpty ||
           display == 'dynamic' ||

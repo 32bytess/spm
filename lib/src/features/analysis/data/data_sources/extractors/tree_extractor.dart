@@ -1,14 +1,27 @@
 import 'dart:collection';
+import 'dart:io';
 
+import 'package:analyzer/dart/analysis/analysis_context.dart';
 import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/diagnostic/diagnostic.dart' show Severity;
+import 'package:analyzer/file_system/physical_file_system.dart';
+// `packageConfigFile` is what makes reading a pub-cache library work at all,
+// and it lives on the implementation rather than on the public
+// `AnalysisContextCollection` factory, which exposes only `includedPaths`,
+// `excludedPaths`, `resourceProvider` and `sdkPath`. Present in analyzer 13
+// and 14 alike, which is the whole range this package allows;
+// `analyzer_package_config_smoke_test.dart` fails if it moves.
+// ignore: implementation_imports
+import 'package:analyzer/src/dart/analysis/analysis_context_collection.dart';
+import 'package:path/path.dart' as p;
 import 'package:spm/src/core/errors/exceptions.dart';
 import 'package:spm/src/core/types.dart';
 import 'package:spm/src/features/analysis/data/data_sources/extensions/ast_node_extensions.dart';
+import 'package:spm/src/features/analysis/data/data_sources/extensions/rebuild_path.dart';
 
 import '../sets/closure_set.dart';
 import '../sets/rebuild_scope_instance_set.dart';
@@ -52,6 +65,12 @@ class _ClosureRecorder {
   final Set<String> resolved = {};
   final Set<String> unresolved = {};
 
+  /// Non-SDK classes whose build bodies were walked, as `libraryUri#Name`.
+  final Set<String> walkedWidgetClasses = {};
+
+  /// Records that [classId] contributed a build body to this scope's metrics.
+  void noteWalked(String classId) => walkedWidgetClasses.add(classId);
+
   /// Records one library lookup. [key] is its path when known, its URI
   /// otherwise, since a library that never resolved to a file has no path.
   void note(String uri, _LibraryEntry entry) {
@@ -72,15 +91,49 @@ class _ClosureRecorder {
   ClosureSet toResult() => (
     dependencyFiles: resolved.toList()..sort(),
     unresolvedDependencies: unresolved.toList()..sort(),
+    packageVersions: _packageVersions(),
+    walkedWidgetClasses: walkedWidgetClasses.toList()..sort(),
   );
+
+  /// The `name-version` segment of every pub-cache path in the closure.
+  ///
+  /// A hosted package resolves to `<cache>/hosted/<host>/<name>-<version>/lib`,
+  /// and that segment is the only place the version appears in anything the
+  /// extractor already holds. A path that does not carry one contributes
+  /// nothing, which is what a path-dependency or a git dependency looks like.
+  Map<String, String> _packageVersions() {
+    final versions = <String, String>{};
+    final segment = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)-([0-9][^/\\]*)$');
+    for (final path in [...resolved, ...unresolved]) {
+      for (final part in path.split(RegExp(r'[/\\]'))) {
+        final match = segment.firstMatch(part);
+        if (match != null) versions[match.group(1)!] = match.group(2)!;
+      }
+    }
+    return versions;
+  }
 }
 
 class TreeExtractor {
+  /// [packageConfigFile] is the resolved `package_config.json` every library
+  /// outside the analyzed roots is read against. See [_collectionForPackage].
+  TreeExtractor({String? packageConfigFile})
+    : _packageConfigFile = packageConfigFile;
+
+  final String? _packageConfigFile;
+
   /// Cache libraryUri -> [_LibraryIndex]. Holds every method of every class
   /// (not just `build`) plus top-level functions, so helper bodies of recursed
   /// child widgets, and State classes of StatefulWidget children, can be
   /// resolved without re-parsing.
   final _libraryCache = <String, _LibraryEntry>{};
+
+  /// One analysis context collection per package root reached outside the
+  /// analyzed directories, built on first use.
+  ///
+  /// A value of null records a root that could not be built, so a second
+  /// library from the same package does not try again.
+  final _packageCollections = <String, AnalysisContextCollection?>{};
 
   Future<ExtractionSet<TreeFeaturesSet>> extract(
     RebuildScopeInstance scope, {
@@ -102,7 +155,7 @@ class TreeExtractor {
       final queue = Queue<_ChildWork>();
 
       // --- Root scope body: a build() body or a builder callback ---
-      acc.buildCc += body.cyclomaticComplexity();
+      acc.buildCc += body.cyclomaticComplexity(isNonRebuildCallback);
       final rootVisitor = BuildMetricsVisitor();
       body.accept(rootVisitor);
       rootVisitor.finish();
@@ -158,7 +211,93 @@ class TreeExtractor {
   }
 
   /// Clears the library cache. Call between unrelated analysis runs.
-  void clearCache() => _libraryCache.clear();
+  void clearCache() {
+    _libraryCache.clear();
+    for (final collection in _packageCollections.values) {
+      collection?.dispose();
+    }
+    _packageCollections.clear();
+  }
+
+  /// The collection that can resolve [filePath], which may sit in a package.
+  ///
+  /// `contextFor` throws `StateError` for any path outside the analyzed roots,
+  /// and every third-party library is such a path. The throw used to be
+  /// swallowed, the entry cached as a miss, and the child dropped along with
+  /// its whole subtree, so a scope that built a package's widget counted
+  /// nothing for it in place while the transplant of the same scope counted the
+  /// carried tree in full. The two sides of that comparison were not comparable.
+  ///
+  /// [_packageConfigFile] is load-bearing rather than an optimisation. A
+  /// package in the pub cache has no `.dart_tool` of its own, so without
+  /// pointing at the application's config the package's own `package:flutter`
+  /// and transitive imports do not resolve, the index builds with null types,
+  /// and every widget in it classifies as a value object: a wrong row instead
+  /// of a short one, which is what Fix 7's `hadErrors` gate then catches.
+  ///
+  /// The cost is bounded. `analyzedFiles()` is never called on these
+  /// collections, only `getResolvedUnit` per library, and the number of roots
+  /// is the number of distinct third-party libraries the traversal enters.
+  AnalysisContext? _contextFor(
+    String filePath,
+    AnalysisContextCollection collection,
+  ) {
+    try {
+      return collection.contextFor(filePath);
+    } catch (_) {
+      // Outside the analyzed roots, which is where a package lives.
+    }
+    final root = _packageRootOf(filePath);
+    if (root == null) return null;
+    final packageCollection = _packageCollections.putIfAbsent(
+      root,
+      () => _buildPackageCollection(root),
+    );
+    if (packageCollection == null) return null;
+    try {
+      return packageCollection.contextFor(filePath);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  AnalysisContextCollection? _buildPackageCollection(String root) {
+    try {
+      return AnalysisContextCollectionImpl(
+        includedPaths: [root],
+        packageConfigFile: _packageConfigFile,
+        resourceProvider: PhysicalResourceProvider.INSTANCE,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// The package directory [filePath] belongs to.
+  ///
+  /// A package library sits at `<root>/lib/...`, in the pub cache as
+  /// `<cache>/<name>-<version>/lib/...`, so the outermost `lib` ancestor names
+  /// the root. That is checked before `pubspec.yaml`, because a package
+  /// resolved through a path dependency or an explicit package config may not
+  /// carry one where the config points, and walking further up would then root
+  /// the collection at something far larger than a package.
+  static String? _packageRootOf(String filePath) {
+    final normalised = p.normalize(p.absolute(filePath));
+    final segments = p.split(normalised);
+    for (var i = 0; i < segments.length - 1; i++) {
+      if (segments[i] == 'lib' && i > 0) {
+        return p.joinAll(segments.sublist(0, i));
+      }
+    }
+
+    var current = p.dirname(normalised);
+    while (true) {
+      if (File(p.join(current, 'pubspec.yaml')).existsSync()) return current;
+      final parent = p.dirname(current);
+      if (parent == current) return null;
+      current = parent;
+    }
+  }
 
   /// Analyzes the widget-returning helpers referenced by one body.
   ///
@@ -219,7 +358,8 @@ class TreeExtractor {
         acc.listRenderingStrategy = v.listRenderingStrategy;
       }
       acc.layoutBuilder = acc.layoutBuilder || v.usesLayoutDependentBuilder;
-      acc.buildCc += resolved.body.cyclomaticComplexity() - 1;
+      acc.buildCc +=
+          resolved.body.cyclomaticComplexity(isNonRebuildCallback) - 1;
 
       // Custom widgets built inside a helper still contribute their build tree.
       // Their absolute depth is measured from 0 (helper nesting is tracked
@@ -263,8 +403,9 @@ class TreeExtractor {
     if (element is ExecutableElement) {
       final enclosing = element.enclosingElement;
       final targetLibraryUri = element.library.identifier;
-      final index = await _indexLibrary(targetLibraryUri, collection, closure);
-      if (index == null) return null;
+      final entry = await _indexLibrary(targetLibraryUri, collection, closure);
+      final index = entry.index;
+      if (index == null || entry.hadErrors) return null;
 
       if (enclosing is InterfaceElement) {
         final className = enclosing.name;
@@ -290,9 +431,11 @@ class TreeExtractor {
     }
 
     // Unresolved (standalone fixtures): fall back to a same-class name lookup.
-    final index = await _indexLibrary(work.libraryUri, collection, closure);
+    final entry = await _indexLibrary(work.libraryUri, collection, closure);
     final className = work.classId.split('#').last;
-    final method = index?.classMethods[className]?[name];
+    final method = entry.hadErrors
+        ? null
+        : entry.index?.classMethods[className]?[name];
     if (method == null) return null;
     return (
       body: method.body,
@@ -322,12 +465,18 @@ class TreeExtractor {
       if (!visitedClasses.add(widgetClassId)) continue;
 
       final libraryUri = element.library.identifier;
-      final index = await _indexLibrary(libraryUri, collection, closure);
+      final entry = await _indexLibrary(libraryUri, collection, closure);
       // A child whose library will not resolve contributes NOTHING, and its
       // whole subtree disappears from the totals with it. `closure` has already
       // recorded that, so the row can be rejected downstream rather than being
       // quietly short by an unknown amount.
-      if (index == null) continue;
+      //
+      // A library that resolved *with* errors is refused for the opposite
+      // reason: it would contribute, and wrongly. Its types resolve to null, so
+      // every widget in it classifies as a value object, which is a wrong row
+      // rather than a short one.
+      final index = entry.index;
+      if (index == null || entry.hadErrors) continue;
 
       final widgetName = element.name;
       var buildClassName = widgetName;
@@ -345,10 +494,13 @@ class TreeExtractor {
       if (buildMethod == null || buildClassName == null) continue;
 
       final buildScopeId = '$libraryUri#$buildClassName';
+      closure.noteWalked(buildScopeId);
       final visitor = BuildMetricsVisitor();
       buildMethod.body.accept(visitor);
       visitor.finish();
-      acc.buildCc += buildMethod.body.cyclomaticComplexity();
+      acc.buildCc += buildMethod.body.cyclomaticComplexity(
+        isNonRebuildCallback,
+      );
 
       acc.mergeVisitor(visitor, isRoot: false);
 
@@ -431,7 +583,7 @@ class TreeExtractor {
   /// Records the lookup in [closure] on every path, cache hits included: the
   /// cache outlives one scope, so a hit means "this scope also depends on that
   /// library", not "already accounted for".
-  Future<_LibraryIndex?> _indexLibrary(
+  Future<_LibraryEntry> _indexLibrary(
     String libraryUri,
     AnalysisContextCollection collection,
     _ClosureRecorder closure,
@@ -439,7 +591,7 @@ class TreeExtractor {
     final cached = _libraryCache[libraryUri];
     if (cached != null) {
       closure.note(libraryUri, cached);
-      return cached.index;
+      return cached;
     }
 
     _LibraryEntry remember(_LibraryEntry entry) {
@@ -450,23 +602,28 @@ class TreeExtractor {
 
     final filePath = _resolveFilePath(libraryUri, collection);
     if (filePath == null) {
-      return remember((index: null, path: null, hadErrors: false)).index;
+      return remember((index: null, path: null, hadErrors: false));
     }
 
     try {
-      final context = collection.contextFor(filePath);
+      final context = _contextFor(filePath, collection);
+      if (context == null) {
+        return remember((index: null, path: filePath, hadErrors: false));
+      }
       final session = context.currentSession;
       final definingUnit = await session.getResolvedUnit(filePath);
       if (definingUnit is! ResolvedUnitResult) {
-        return remember((index: null, path: filePath, hadErrors: false)).index;
+        return remember((index: null, path: filePath, hadErrors: false));
       }
 
       // A unit that carries an error-severity diagnostic still resolves, but it
       // just resolves its types to null, so every widget in it classifies as a
       // value object. Reading it produces a well-formed index full of wrong
-      // numbers, which is worse than reading nothing. The index is still built
-      // (dropping it would change the metrics this build already produces);
-      // what changes is that the row now says so.
+      // numbers, which is worse than reading nothing. The index is still built,
+      // because the closure entry is what records the verdict, and the callers
+      // refuse it: a library that resolved with errors is skipped exactly as
+      // one that did not resolve at all, which is the same trade the top-level
+      // scanned-file gate makes.
       var hadErrors = definingUnit.diagnostics.any(
         (d) => d.severity == Severity.error,
       );
@@ -510,10 +667,10 @@ class TreeExtractor {
         ),
         path: filePath,
         hadErrors: hadErrors,
-      )).index;
+      ));
     } catch (_) {
       // Cache the miss to avoid re-trying failed files.
-      return remember((index: null, path: filePath, hadErrors: false)).index;
+      return remember((index: null, path: filePath, hadErrors: false));
     }
   }
 

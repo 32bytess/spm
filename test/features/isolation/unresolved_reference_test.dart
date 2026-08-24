@@ -83,9 +83,9 @@ void main() {
   });
 
   test('restores a context extension the import gate refuses to bring in', () {
-    // `read` is declared by provider or flutter_bloc, neither of which the
-    // isolated file may import. Rebuilt as an extension on BuildContext, it
-    // names no package and covers `watch` and `select` the same way.
+    // `read` is declared by a state-management package, which the isolated
+    // file may not import. Rebuilt as an extension on BuildContext, it names no
+    // package and covers `watch` and `select` the same way.
     expect(
       isolated,
       contains('extension _SpmBuildContextShim on BuildContext'),
@@ -112,7 +112,10 @@ void main() {
   test(
     'an unresolved bare identifier is declared rather than left dangling',
     () {
-      expect(isolated, contains('late dynamic missingGlobal;'));
+      // A stub rather than an unassigned `late`. These names are read as
+      // member chains, and an unassigned `late` throws before the first frame
+      // where a stub answers and keeps the chain alive to its end.
+      expect(isolated, contains('dynamic missingGlobal = const _Stub();'));
     },
   );
 

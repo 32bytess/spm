@@ -47,11 +47,20 @@ class IsolationSummaryEvent extends IsolationEvent {
   /// Total error-severity diagnostics across the verified files.
   final int errorCount;
 
+  /// How many scopes carried third-party source and then gave it back.
+  ///
+  /// A defect count rather than an achievement. Reverting buys a readable file
+  /// by shrinking the tree, which is the wrong direction when the isolated row
+  /// and the in-place row are meant to describe the same thing, so such a row
+  /// is one to exclude rather than to compare.
+  final int revertedCount;
+
   IsolationSummaryEvent({
     required this.isolatedCount,
     required this.outputDir,
     this.verifiedCount = 0,
     this.cleanCount = 0,
     this.errorCount = 0,
+    this.revertedCount = 0,
   });
 }

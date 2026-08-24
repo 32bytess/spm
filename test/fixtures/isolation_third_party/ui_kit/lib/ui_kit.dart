@@ -142,12 +142,12 @@ class FancyController extends FancyBase {
 
 /// The shape that makes carrying a package's code the worse answer.
 ///
-/// `provider` is the real case. Its `ChangeNotifierProvider<T extends
-/// ChangeNotifier?>` type-checks in the app because the repo-local class
-/// passed for `T` really does extend `ChangeNotifier`. In an isolated file that
-/// class is a stand-in with no supertype at all, so carrying the generic
-/// across turns a file that analysed into one that does not, and `spm analyze`
-/// skips any file carrying an error.
+/// A package widget generic over a type bounded by one of the package's own
+/// classes is the real case. It type-checks in the app because the repo-local
+/// class passed for the parameter really does satisfy the bound. In an isolated
+/// file that class is a stand-in with no supertype at all, so carrying the
+/// generic across turns a file that analysed into one that does not, and
+/// `spm analyze` skips any file carrying an error.
 ///
 /// A stand-in for this widget renders its type parameters without bounds, so it
 /// accepts whatever the scope passes and the file analyses. That is what the
@@ -163,4 +163,69 @@ class FancyTypedBox<T extends FancyModel> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Text(value.title);
+}
+
+/// Takes a `child` and renders it, which is what a stand-in for it must also do.
+///
+/// A stand-in used to accept `child` and build `const SizedBox.shrink()`, so
+/// whatever tree the transplanted code passed in was constructed and then never
+/// mounted, laid out or painted.
+class FancyBox extends StatelessWidget {
+  const FancyBox({super.key, this.child});
+
+  final Widget? child;
+
+  @override
+  Widget build(BuildContext context) => child ?? const SizedBox.shrink();
+}
+
+/// The `children` case, which is the one that can move a feature.
+class FancyStack extends StatelessWidget {
+  const FancyStack({super.key, this.children = const []});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => Stack(children: children);
+}
+
+/// The `body` case, and a second constructor that does not take it.
+class FancyPage extends StatelessWidget {
+  const FancyPage({super.key, this.body});
+
+  const FancyPage.empty({super.key}) : body = null;
+
+  final Widget? body;
+
+  @override
+  Widget build(BuildContext context) => body ?? const SizedBox.shrink();
+}
+
+/// Draws its own content, so there is nothing to pass on.
+class FancyChart extends StatelessWidget {
+  const FancyChart({super.key, this.points = const []});
+
+  final List<double> points;
+
+  @override
+  Widget build(BuildContext context) => Text('${points.length}');
+}
+
+/// Hands out UI without being a widget, so a stand-in has to keep the types
+/// that say so.
+class FancyStyles {
+  Widget get badge => const SizedBox.shrink();
+  List<Widget> get rows => const [];
+  int get spacing => 8;
+  String get familyName => 'fancy';
+}
+
+/// A non-widget with a supertype the isolated file can name.
+class FancyNotifier extends ChangeNotifier {
+  int taps = 0;
+
+  void bump() {
+    taps++;
+    notifyListeners();
+  }
 }

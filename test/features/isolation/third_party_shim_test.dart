@@ -39,15 +39,18 @@ class ThirdPartyWidgetHostState extends State<ThirdPartyWidgetHost> {
   static const FancySpec _spec = FancySpec(weight: 2);
   final FancyController _controller = FancyController();
 
-  @override
-  void initState() {
-    super.initState();
+  // On the rebuild path deliberately: the point of the assertions below is that
+  // an inherited member of a third-party stand-in resolves, and `spm isolate`
+  // no longer carries a body a rebuild cannot run, so a call parked in
+  // `initState` would not reach the stand-in at all.
+  Widget _tapped() {
     _controller.tap();
+    return Text('\${_spec.weight}');
   }
 
   @override
   Widget build(BuildContext context) => Column(
-    children: [const FancyButton(label: 'go'), Text('\${_spec.weight}')],
+    children: [const FancyButton(label: 'go'), _tapped()],
   );
 }
 ''';
@@ -141,8 +144,8 @@ void main() {
     // by whichever call sites the traversal reached. For a type this size,
     // rendering the declared surface costs a line and removes the whole class
     // of failure.
-    expect(isolated, contains('int get weight'));
-    expect(isolated, contains('String get label'));
+    expect(isolated, contains('dynamic get weight => 0;'));
+    expect(isolated, contains("dynamic get label => '';"));
   });
 
   test('a large type still carries only what the scope reaches', () {
@@ -152,15 +155,24 @@ void main() {
     expect(isolated, isNot(contains('void pad0()')));
   });
 
-  test('an inherited member lands on the type the code names', () {
-    // `tap` is declared on `FancyBase`, so keying it to its declaring class put
-    // it on the wrong stand-in and left `_controller.tap()` undefined against
-    // `FancyController`. The member is recorded from the receiver instead.
+  test('an inherited member is reachable through the type the code names', () {
+    // `tap` is declared on `FancyBase`, so keying it to its declaring class used
+    // to put it on the wrong stand-in and leave `_controller.tap()` undefined
+    // against `FancyController`.
+    //
+    // The stand-in now mirrors the real chain: `FancyBase` gets its own, and
+    // `FancyController extends FancyBase` inherits `tap` from it. Declaring it
+    // on both would be a redundant override, and the base's is the one the call
+    // site was written against.
     expect(isolated, contains('void tap()'));
+    expect(isolated, contains('class FancyController extends FancyBase'));
     expect(
-      RegExp(r'class FancyController \{[^}]*void tap\(\)').hasMatch(isolated),
+      RegExp(
+        r'class FancyBase \{[^}]*void tap\(\)',
+        dotAll: true,
+      ).hasMatch(isolated),
       isTrue,
-      reason: 'tap must be declared on FancyController, not only on FancyBase',
+      reason: 'tap has to be declared somewhere in FancyController\'s chain',
     );
   });
 

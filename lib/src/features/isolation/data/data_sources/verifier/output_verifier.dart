@@ -7,7 +7,7 @@ import 'package:analyzer/diagnostic/diagnostic.dart';
 import 'package:analyzer/error/error.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:path/path.dart' as p;
-import 'package:spm/src/features/isolation/data/data_sources/helpers/package_config.dart';
+import 'package:spm/src/core/analysis/package_config.dart';
 
 /// What analysing one isolated file found.
 class OutputVerification {

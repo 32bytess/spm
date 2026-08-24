@@ -57,63 +57,78 @@ void main() {
     if (!file.existsSync()) return const [];
     return [
       for (final line in file.readAsLinesSync())
-        if (line.trim().isNotEmpty)
-          jsonDecode(line) as Map<String, dynamic>,
+        if (line.trim().isNotEmpty) jsonDecode(line) as Map<String, dynamic>,
     ];
   }
 
-  test('an unresolvable project is flagged on every run, not just the first',
-      () async {
-    final first = await runIsolate();
-    expect(first, isNotEmpty, reason: 'the scope should still be transplanted');
-    expect(
-      first.every((row) => row['sourceDependenciesResolved'] == false),
-      isTrue,
-      reason: 'nothing third-party resolved, so every row is shallow',
-    );
+  test(
+    'an unresolvable project is flagged on every run, not just the first',
+    () async {
+      final first = await runIsolate();
+      expect(
+        first,
+        isNotEmpty,
+        reason: 'the scope should still be transplanted',
+      );
+      expect(
+        first.every((row) => row['sourceDependenciesResolved'] == false),
+        isTrue,
+        reason: 'nothing third-party resolved, so every row is shallow',
+      );
 
-    // The first run leaves its own synthesised `package_config.json` behind.
-    // Taking that as proof of resolution is what silenced the flag from here
-    // on, and in a history walk that is every revision after the first.
-    expect(
-      File(p.join(project.path, '.dart_tool', 'package_config.json')).existsSync(),
-      isTrue,
-      reason: 'the fallback config is the thing the second run has to see through',
-    );
+      // The first run leaves its own synthesised `package_config.json` behind.
+      // Taking that as proof of resolution is what silenced the flag from here
+      // on, which over repeated runs is every run after the first.
+      expect(
+        File(
+          p.join(project.path, '.dart_tool', 'package_config.json'),
+        ).existsSync(),
+        isTrue,
+        reason:
+            'the fallback config is the thing the second run has to see through',
+      );
 
-    final second = await runIsolate();
-    expect(second, isNotEmpty);
-    expect(
-      second.every((row) => row['sourceDependenciesResolved'] == false),
-      isTrue,
-      reason: 'the second run resolved no more than the first did',
-    );
-  }, timeout: const Timeout(Duration(minutes: 3)));
+      final second = await runIsolate();
+      expect(second, isNotEmpty);
+      expect(
+        second.every((row) => row['sourceDependenciesResolved'] == false),
+        isTrue,
+        reason: 'the second run resolved no more than the first did',
+      );
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 
-  test('a real package config is not mistaken for a synthesised one', () async {
-    // The guard keys on the `generator` field spm writes, so a genuine config
-    // has to keep reading as resolved.
-    File(p.join(project.path, '.dart_tool', 'package_config.json'))
-      ..parent.createSync(recursive: true)
-      ..writeAsStringSync(jsonEncode({
-        'configVersion': 2,
-        'packages': [
-          {
-            'name': 'degraded_fixture',
-            'rootUri': '../',
-            'packageUri': 'lib/',
-            'languageVersion': '3.0',
-          },
-        ],
-        'generator': 'pub',
-      }));
+  test(
+    'a real package config is not mistaken for a synthesised one',
+    () async {
+      // The guard keys on the `generator` field spm writes, so a genuine config
+      // has to keep reading as resolved.
+      File(p.join(project.path, '.dart_tool', 'package_config.json'))
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode({
+            'configVersion': 2,
+            'packages': [
+              {
+                'name': 'degraded_fixture',
+                'rootUri': '../',
+                'packageUri': 'lib/',
+                'languageVersion': '3.0',
+              },
+            ],
+            'generator': 'pub',
+          }),
+        );
 
-    final rows = await runIsolate();
-    expect(rows, isNotEmpty);
-    expect(
-      rows.any((row) => row.containsKey('sourceDependenciesResolved')),
-      isFalse,
-      reason: 'pub wrote this config, so the project counts as resolved',
-    );
-  }, timeout: const Timeout(Duration(minutes: 3)));
+      final rows = await runIsolate();
+      expect(rows, isNotEmpty);
+      expect(
+        rows.any((row) => row.containsKey('sourceDependenciesResolved')),
+        isFalse,
+        reason: 'pub wrote this config, so the project counts as resolved',
+      );
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
 }

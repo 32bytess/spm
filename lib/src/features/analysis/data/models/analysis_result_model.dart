@@ -24,6 +24,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
     required super.helperMaxWidgetNestingDepth,
     super.dependencyFiles,
     super.unresolvedDependencies,
+    super.packageVersions,
+    super.walkedWidgetClasses,
   });
 
   factory AnalysisResultModel.fromEntity(AnalysisResultEntity entity) {
@@ -48,6 +50,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
       helperMaxWidgetNestingDepth: entity.helperMaxWidgetNestingDepth,
       dependencyFiles: entity.dependencyFiles,
       unresolvedDependencies: entity.unresolvedDependencies,
+      packageVersions: entity.packageVersions,
+      walkedWidgetClasses: entity.walkedWidgetClasses,
     );
   }
 
@@ -76,6 +80,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
       'closureResolved': closureResolved.toInt(),
       'dependencyFiles': dependencyFiles,
       'unresolvedDependencies': unresolvedDependencies,
+      'packageVersions': packageVersions,
+      'walkedWidgetClasses': walkedWidgetClasses,
     };
   }
 
@@ -85,6 +91,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
     required String filePath,
     List<String> dependencyFiles = const [],
     List<String> unresolvedDependencies = const [],
+    Map<String, String> packageVersions = const {},
+    List<String> walkedWidgetClasses = const [],
   }) {
     return AnalysisResultModel(
       instanceId: scope.instanceId,
@@ -107,6 +115,8 @@ class AnalysisResultModel extends AnalysisResultEntity {
       helperMaxWidgetNestingDepth: treeFeatures.helperMaxWidgetNestingDepth,
       dependencyFiles: dependencyFiles,
       unresolvedDependencies: unresolvedDependencies,
+      packageVersions: packageVersions,
+      walkedWidgetClasses: walkedWidgetClasses,
     );
   }
 }

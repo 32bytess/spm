@@ -53,6 +53,22 @@ class AnalysisResultEntity {
   /// differs measures resolution state, not a code change.
   final List<String> unresolvedDependencies;
 
+  /// The resolved version of every package the closure entered, by name.
+  ///
+  /// A package version became an input to the metrics when the extractor
+  /// started reading package libraries, so this is what makes the pin to one
+  /// resolved package config auditable: two runs that somehow read different
+  /// versions of a package are visible rather than silent.
+  final Map<String, String> packageVersions;
+
+  /// The non-SDK classes whose build bodies were walked, as `libraryUri#Name`.
+  ///
+  /// One half of the agreement check against `spm isolate`, whose mapping row
+  /// carries the other under `carriedUiDeclarations`. For every declaration
+  /// walked here the transplant has to carry the source, or the two rows
+  /// describe different trees and cannot be compared.
+  final List<String> walkedWidgetClasses;
+
   /// Whether every file the metrics depend on was read successfully.
   bool get closureResolved => unresolvedDependencies.isEmpty;
 
@@ -77,5 +93,7 @@ class AnalysisResultEntity {
     required this.helperMaxWidgetNestingDepth,
     this.dependencyFiles = const [],
     this.unresolvedDependencies = const [],
+    this.packageVersions = const {},
+    this.walkedWidgetClasses = const [],
   });
 }

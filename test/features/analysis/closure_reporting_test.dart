@@ -77,12 +77,20 @@ void main() {
     });
 
     test('has metrics silently short of the resolved case', () {
-      // 8 not 9, depth 5 not 6: the unresolved call is not recognised as a
-      // widget, so it and its nesting level vanish. Comparing this row against
-      // a resolved revision of the same scope would report a code change that
-      // never happened.
-      expect(scope.treeNonConstWidgetCount, 8);
-      expect(scope.treeMaxWidgetNestingDepth, 5);
+      // 2 not 9, depth 2 not 6: only `Padding` and `MyCard` from the scope's
+      // own build survive, because the library that declares `MyCard` resolved
+      // while carrying an error and is refused whole.
+      //
+      // Refusing it is the point. That library's types come back null, so its
+      // widgets classify as value objects and its subtree is counted as
+      // something it is not. Reading it produced a row of 8 that looked like a
+      // measurement; refusing it produces a row of 2 that is short by an amount
+      // `unresolvedDependencies` names. A short row a reader can see is worth
+      // more than a wrong one they cannot, and comparing either against a
+      // resolved revision of the same scope reports a code change that never
+      // happened, which is why the field exists.
+      expect(scope.treeNonConstWidgetCount, 2);
+      expect(scope.treeMaxWidgetNestingDepth, 2);
     });
   });
 }

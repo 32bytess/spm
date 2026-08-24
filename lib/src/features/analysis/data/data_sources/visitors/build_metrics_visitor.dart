@@ -4,6 +4,8 @@ import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
 import 'package:spm/src/core/constants/app_constants.dart' show AppConstants;
 
+import '../extensions/rebuild_path.dart';
+
 typedef ChildWidgetRef = ({ClassElement element, int depth});
 
 /// A reference to a widget-returning helper discovered in a body: a direct
@@ -62,6 +64,13 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   /// site. See [visitFunctionDeclarationStatement].
   final Map<String, FunctionExpression> _deferredLocalFns = {};
 
+  /// Names of those local functions that a skipped callback referenced.
+  ///
+  /// A body reached only from an `onPressed` runs only when the user presses,
+  /// so [finish] must not visit it. Without this the skip would move such a
+  /// body from the handler's context to the root's rather than drop it.
+  final Set<String> _handlerReferencedFns = {};
+
   BuildMetricsVisitor();
 
   /// Visits any local function that was declared but never referenced. Call
@@ -69,6 +78,12 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   /// readability and never used still contributes its widgets exactly as it
   /// did when bodies were visited at their declaration site.
   void finish() {
+    // Referenced from a callback that cannot run during a rebuild, and from
+    // nowhere else: a build-path reference would have visited and removed it
+    // already, so first reference wins.
+    _deferredLocalFns.removeWhere(
+      (name, _) => _handlerReferencedFns.contains(name),
+    );
     while (_deferredLocalFns.isNotEmpty) {
       final name = _deferredLocalFns.keys.first;
       _visitDeferredLocalFn(name);
@@ -82,6 +97,22 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   void _visitDeferredLocalFn(String name) {
     final fn = _deferredLocalFns.remove(name);
     if (fn != null) fn.accept(this);
+  }
+
+  /// Records which deferred local functions a skipped callback references, so
+  /// [finish] can tell "never referenced" from "referenced only by a handler".
+  ///
+  /// Dart requires a local function to be declared before it is referenced, so
+  /// by the time a handler is reached the map already holds every name that
+  /// handler can reach.
+  void _noteHandlerReferences(FunctionExpression node) {
+    if (_deferredLocalFns.isEmpty) return;
+    node.visitChildren(
+      _DeferredFnReferenceCollector(
+        _deferredLocalFns.keys.toSet(),
+        _handlerReferencedFns,
+      ),
+    );
   }
 
   @override
@@ -188,6 +219,14 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
 
   @override
   void visitSimpleIdentifier(SimpleIdentifier node) {
+    // `onPressed: submit` is a call site that fires on interaction, so the
+    // torn-off body stays out of the metrics exactly as the closure form does.
+    if (isNonRebuildCallbackReference(node)) {
+      if (_deferredLocalFns.containsKey(node.name)) {
+        _handlerReferencedFns.add(node.name);
+      }
+      return;
+    }
     // A tear-off of a local function (`items.map(row)`) is a call site too.
     _visitDeferredLocalFn(node.name);
     _maybeCountHelperReference(node);
@@ -233,7 +272,18 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   void visitFunctionExpression(FunctionExpression node) {
     // Fires for closures and local functions only. A method's own body is
     // not a FunctionExpression. Used to keep closure returns from being
-    // mistaken for the build body's root return.
+    // mistaken for the build body's root return, and to prune the callbacks a
+    // rebuild cannot run.
+    //
+    // An event handler's body runs on interaction, which the traced window
+    // never contains. Pruning it here covers every feature at once,
+    // customChildWidgets and so the child traversal included, since they are
+    // all populated below this node. _functionDepth is not bumped in that
+    // branch because nothing inside is visited.
+    if (isNonRebuildCallback(node)) {
+      _noteHandlerReferences(node);
+      return;
+    }
     _functionDepth++;
     super.visitFunctionExpression(node);
     _functionDepth--;
@@ -494,5 +544,19 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
     return libraryId.startsWith('dart:') ||
         libraryId.startsWith('package:flutter/') ||
         !libraryId.contains('.');
+  }
+}
+
+/// Collects the deferred-local-function names referenced inside a subtree that
+/// [BuildMetricsVisitor] declined to walk.
+class _DeferredFnReferenceCollector extends RecursiveAstVisitor<void> {
+  _DeferredFnReferenceCollector(this._deferredNames, this._found);
+
+  final Set<String> _deferredNames;
+  final Set<String> _found;
+
+  @override
+  void visitSimpleIdentifier(SimpleIdentifier node) {
+    if (_deferredNames.contains(node.name)) _found.add(node.name);
   }
 }

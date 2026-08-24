@@ -15,11 +15,13 @@ class AnalysisRepositoryImpl implements AnalysisRepository {
   AnalysisStream analyze(
     RepositoryPaths repoDirs, {
     Set<String>? scopeTypes,
+    String? packageConfigFile,
   }) async* {
     try {
       final result = analysisDataSource.analyzeDirs(
         repoDirs,
         scopeTypes: scopeTypes,
+        packageConfigFile: packageConfigFile,
       );
       await for (final event in result) {
         yield Right(event);
