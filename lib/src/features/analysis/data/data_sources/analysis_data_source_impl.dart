@@ -1,10 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/diagnostic/diagnostic.dart' show Severity;
-import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:path/path.dart' as p;
 import 'package:spm/src/core/analysis/package_config.dart';
 import 'package:spm/src/core/errors/exceptions.dart';
@@ -30,10 +28,7 @@ class AnalysisDataSourceImpl implements AnalysisDataSource {
     int scopesFound = 0;
     int keptRows = 0;
     final scopesByType = <String, int>{};
-    final collection = AnalysisContextCollection(
-      includedPaths: repoDirs,
-      resourceProvider: PhysicalResourceProvider.INSTANCE,
-    );
+    final collection = contextCollectionFor(repoDirs);
     // AST nodes are tied to the collection/session that resolved them. Keep
     // the extractor (and its library cache) local to this run so repeated or
     // concurrent analyses can never reuse stale nodes from another session.

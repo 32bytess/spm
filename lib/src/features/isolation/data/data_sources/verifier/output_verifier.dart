@@ -1,11 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/diagnostic/diagnostic.dart';
 import 'package:analyzer/error/error.dart';
-import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:path/path.dart' as p;
 import 'package:spm/src/core/analysis/package_config.dart';
 
@@ -112,10 +110,7 @@ class OutputVerifier {
       return {for (final file in files) file: OutputVerification.unverified};
     }
 
-    final collection = AnalysisContextCollection(
-      includedPaths: [outputDir],
-      resourceProvider: PhysicalResourceProvider.INSTANCE,
-    );
+    final collection = contextCollectionFor([outputDir]);
 
     final results = <String, OutputVerification>{};
     for (final file in files) {

@@ -1,6 +1,7 @@
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/nullability_suffix.dart';
 import 'package:analyzer/dart/element/type.dart';
+import 'package:spm/src/core/analysis/type_predicates.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/default_values.dart';
 
 /// Emits declaration-only stand-ins for symbols the transplant cannot inline.
@@ -273,7 +274,7 @@ ${bodies.join('\n\n')}
     // widget to `StatelessWidget` keeps `Widget` in the resolved chain while
     // leaving exactly one abstract member to satisfy. A `StatefulWidget` base
     // would demand a `createState` returning a `State` the shim cannot supply.
-    final isWidget = _hasSupertypeNamed(element, 'Widget');
+    final isWidget = hasSupertypeNamed(element, 'Widget');
     final passThrough = (isWidget && element is! MixinElement)
         ? _passThroughFor(element, name)
         : null;
@@ -991,11 +992,7 @@ ${bodies.join('\n\n')}
   /// hands back: a `List<Widget>` member keeps its declared type because the
   /// helper rule counts it, and its value is an empty list rather than a
   /// widget.
-  static bool _isWidgetType(DartType type) {
-    if (type is! InterfaceType) return false;
-    return type.element.name == 'Widget' ||
-        type.allSupertypes.any((t) => t.element.name == 'Widget');
-  }
+  static bool _isWidgetType(DartType type) => isTypeNamed(type, 'Widget');
 
   /// The most-derived supertype of [type] the isolated file can name.
   ///
@@ -1057,11 +1054,6 @@ ${bodies.join('\n\n')}
 
   String _renderTypeParams(Set<String> names) =>
       names.isEmpty ? '' : '<${names.join(', ')}>';
-
-  static bool _hasSupertypeNamed(InterfaceElement element, String name) {
-    if (element.name == name) return true;
-    return element.allSupertypes.any((t) => t.element.name == name);
-  }
 
   static String? _libraryUri(Element element) {
     try {

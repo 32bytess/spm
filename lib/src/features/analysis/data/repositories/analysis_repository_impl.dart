@@ -28,10 +28,6 @@ class AnalysisRepositoryImpl implements AnalysisRepository {
       }
     } on AnalyzerInitializationException catch (e) {
       yield Left(AnalyzerInitializationFailure(e.message));
-    } on ComplexityExtractionException catch (e, stackTrace) {
-      yield Left(ComplexityExtractionFailure(e.message, stackTrace.toString()));
-    } on ContextExtractionException catch (e, stackTrace) {
-      yield Left(ContextExtractionFailure(e.message, stackTrace.toString()));
     } on TreeExtractionException catch (e, stackTrace) {
       yield Left(TreeExtractionFailure(e.message, stackTrace.toString()));
     } catch (e, stackTrace) {

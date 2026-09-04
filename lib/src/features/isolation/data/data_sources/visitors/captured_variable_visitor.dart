@@ -3,8 +3,9 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
-import 'package:path/path.dart' as p;
 import 'package:spm/src/core/rebuild_path.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/element_access.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/project_paths.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 
 /// A name a rebuild scope reads without declaring it.
@@ -130,7 +131,7 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
     // being free. Only the target matters, and it is visited separately.
     if (_isQualifiedTail(node)) return;
 
-    final element = _elementOf(node);
+    final element = elementOf(node);
     if (element == null) return;
 
     if (element is LocalVariableElement || element is FormalParameterElement) {
@@ -256,7 +257,7 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
     final path = _resolveToPath(libraryUri);
     if (path == null) return false;
     final root = result.session.analysisContext.contextRoot.root.path;
-    return p.isWithin(root, path) || p.equals(root, path);
+    return isWithinRoot(root, path);
   }
 
   /// Maps a library URI to a file path, resolving `package:` through the
@@ -323,18 +324,5 @@ class CapturedVariableVisitor extends RecursiveAstVisitor<void> {
     } catch (_) {
       return null;
     }
-  }
-
-  Element? _elementOf(SimpleIdentifier node) {
-    final dynamic n = node;
-    try {
-      final e = n.element;
-      if (e != null) return e as Element;
-    } catch (_) {}
-    try {
-      final e = n.staticElement;
-      if (e != null) return e as Element;
-    } catch (_) {}
-    return null;
   }
 }

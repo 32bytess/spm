@@ -2,6 +2,7 @@ import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/element_access.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 
 class Skeletonizer {
@@ -343,10 +344,10 @@ class _ReplacementCollector extends RecursiveAstVisitor<void> {
     Element? element;
     if (node is InstanceCreationExpression) {
       element =
-          _getElement(node.constructorName)?.enclosingElement ??
-          _getElement(node)?.enclosingElement;
+          elementOf(node.constructorName)?.enclosingElement ??
+          elementOf(node)?.enclosingElement;
     } else if (node is MethodInvocation) {
-      element = _getElement(node.methodName) ?? _getElement(node);
+      element = elementOf(node.methodName) ?? elementOf(node);
     }
     if (element == null) return null;
     final name = element.name;
@@ -376,19 +377,5 @@ class _ReplacementCollector extends RecursiveAstVisitor<void> {
     } catch (_) {
       return true;
     }
-  }
-
-  Element? _getElement(dynamic node) {
-    if (node == null) return null;
-    try {
-      return node.staticElement;
-    } catch (_) {}
-    try {
-      return node.element;
-    } catch (_) {}
-    try {
-      return node.element2;
-    } catch (_) {}
-    return null;
   }
 }

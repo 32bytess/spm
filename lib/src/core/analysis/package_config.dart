@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
+import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:path/path.dart' as p;
 
 /// The nearest `.dart_tool/package_config.json` at or above [dir].
@@ -45,3 +47,17 @@ bool isSynthesisedConfig(File configFile) {
     return true;
   }
 }
+
+/// An analysis context collection over [includedPaths], on the physical file
+/// system.
+///
+/// Every command that walks real files wants exactly this, and building it by
+/// hand in five places meant five chances to pass a different resource
+/// provider. It deliberately does not cover `tree_extractor`, which needs
+/// `AnalysisContextCollectionImpl` so it can pin `packageConfigPath`, something
+/// this factory does not expose.
+AnalysisContextCollection contextCollectionFor(List<String> includedPaths) =>
+    AnalysisContextCollection(
+      includedPaths: includedPaths,
+      resourceProvider: PhysicalResourceProvider.INSTANCE,
+    );

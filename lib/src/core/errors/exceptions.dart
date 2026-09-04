@@ -4,36 +4,6 @@ class AnalyzerInitializationException implements Exception {
   AnalyzerInitializationException(this.message, [this.stackTrace]);
 }
 
-class AnalysisException implements Exception {
-  final String message;
-  final String? stackTrace;
-  AnalysisException(this.message, [this.stackTrace]);
-}
-
-class FeatureExtractionException implements Exception {
-  final String message;
-  final String? featureName;
-  final String? stackTrace;
-  FeatureExtractionException(this.message, [this.featureName, this.stackTrace]);
-}
-
-class InvalidSetStateInstanceException implements Exception {
-  final String message;
-  InvalidSetStateInstanceException(this.message);
-}
-
-class ComplexityExtractionException implements Exception {
-  final String message;
-  final String? stackTrace;
-  ComplexityExtractionException(this.message, [this.stackTrace]);
-}
-
-class ContextExtractionException implements Exception {
-  final String message;
-  final String? stackTrace;
-  ContextExtractionException(this.message, [this.stackTrace]);
-}
-
 class TreeExtractionException implements Exception {
   final String message;
   final String? stackTrace;

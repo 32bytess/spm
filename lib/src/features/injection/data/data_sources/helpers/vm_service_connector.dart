@@ -15,8 +15,6 @@ class VmServiceConnector {
   VmService? _vmService;
   StreamSubscription<Event>? _extensionSub;
 
-  bool get isConnected => _vmService != null;
-
   /// Connects to the Dart VM service at [wsUri] and starts listening for
   /// profiler extension events
   ///

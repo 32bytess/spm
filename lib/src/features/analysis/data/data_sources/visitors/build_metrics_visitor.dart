@@ -2,6 +2,7 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
+import 'package:spm/src/core/analysis/type_predicates.dart';
 import 'package:spm/src/core/constants/app_constants.dart' show AppConstants;
 
 import '../extensions/rebuild_path.dart';
@@ -484,11 +485,7 @@ class BuildMetricsVisitor extends RecursiveAstVisitor<void> {
   /// Whether [type] is `Widget` or a subtype of it. Used both to detect
   /// widget-returning helper methods and to distinguish real widgets from
   /// value objects such as `EdgeInsets` and `TextStyle` during counting.
-  static bool _isWidgetType(DartType? type) {
-    if (type is! InterfaceType) return false;
-    return type.element.name == 'Widget' ||
-        type.allSupertypes.any((t) => t.element.name == 'Widget');
-  }
+  static bool _isWidgetType(DartType? type) => isTypeNamed(type, 'Widget');
 
   /// Whether an executable returning [type] is a widget-producing helper.
   ///

@@ -22,7 +22,6 @@ abstract class SpmState<T extends StatefulWidget> extends State<T> {
 
   @override
   void setState(VoidCallback fn) {
-    print('setState $instanceId');
     if (kProfileMode) {
       SpmProfiler.monitor(instanceId, super.setState, fn);
     } else if (kDebugMode) {

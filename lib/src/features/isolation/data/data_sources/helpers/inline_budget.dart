@@ -45,20 +45,42 @@ class InlineBudget {
   int _declarations = 0;
   int _characters = 0;
   bool _exhausted = false;
+  final Map<String, String> _packages = <String, String>{};
 
   /// How many third-party declarations were inlined.
   int get inlinedDeclarations => _declarations;
+
+  /// The hosted packages this budget was actually spent on, name to version.
+  ///
+  /// Populated by [take] rather than by its callers, so it cannot drift from
+  /// [inlinedDeclarations]: a declaration is counted and its package recorded
+  /// in the same statement, and the two are non-empty together or not at all.
+  /// That equivalence is what lets a reader treat an absent map as "this scope
+  /// carried no package source" instead of "nobody wrote the recording down".
+  ///
+  /// Empty for a path or git dependency, whose directory carries no version to
+  /// read. Such a dependency still costs budget and still shows in the count,
+  /// so a count without a matching entry is the signal that one is in play --
+  /// which is why [take] returns the package it recorded, or null.
+  Map<String, String> get inlinedPackages => Map.unmodifiable(_packages);
 
   /// Whether the budget ran out, so some third-party UI was shimmed that would
   /// otherwise have been inlined.
   bool get exhausted => _exhausted;
 
-  /// Records an inlined declaration of [length] characters.
+  /// Records an inlined declaration of [length] characters, read from
+  /// [fromPath].
   ///
   /// Returns false once the budget is spent, and stays false from then on: a
   /// small declaration arriving after a large one blew the cap must not slip
   /// through, or the output depends on traversal order.
-  bool take(int length) {
+  ///
+  /// [fromPath] is the absolute path the declaration's source was read from,
+  /// which for a hosted dependency is inside the pub cache. It is required
+  /// rather than optional because the caller that forgets it is exactly the
+  /// caller whose inlined package would go unrecorded, and an under-reported
+  /// map is worse than no map: downstream reads it as a complete answer.
+  bool take(int length, String fromPath) {
     if (_exhausted) return false;
     if (_declarations + 1 > maxDeclarations ||
         _characters + length > maxCharacters) {
@@ -67,6 +89,30 @@ class InlineBudget {
     }
     _declarations++;
     _characters += length;
+    final package = hostedPackageOf(fromPath);
+    if (package != null) _packages[package.name] = package.version;
     return true;
   }
+}
+
+/// The `name-version` segment of a pub-cache path, split apart.
+///
+/// A hosted package resolves to `<cache>/hosted/<host>/<name>-<version>/lib`,
+/// and that segment is the only place the version appears in anything the
+/// isolation pass already holds. Same shape, and deliberately the same regular
+/// expression, as `TreeExtractor._packageVersions` on the analyze side: the two
+/// commands must agree about what a package is called before anything can be
+/// checked across them.
+///
+/// Null for a path that carries no such segment, which is what a path
+/// dependency, a git dependency and a project-local file all look like.
+({String name, String version})? hostedPackageOf(String path) {
+  final segment = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)-([0-9][^/\\]*)$');
+  for (final part in path.split(RegExp(r'[/\\]'))) {
+    final match = segment.firstMatch(part);
+    if (match != null) {
+      return (name: match.group(1)!, version: match.group(2)!);
+    }
+  }
+  return null;
 }

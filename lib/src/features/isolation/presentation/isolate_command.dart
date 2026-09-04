@@ -1,16 +1,17 @@
-import 'package:spm/src/features/isolation/data/data_sources/helpers/inline_budget.dart';
 import 'dart:async';
 
 import 'package:args/command_runner.dart';
 import 'package:path/path.dart' as p;
 import 'package:spm/src/core/injection/cli_service_locator.dart';
 import 'package:spm/src/core/loggor/logger.dart';
+import 'package:spm/src/core/presentation/directory_arguments.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/inline_budget.dart';
 import 'package:spm/src/features/isolation/domain/entities/isolation_event.dart';
 
 /// CLI command to trigger the isolation process.
 ///
 /// Usage: `spm isolate -o <output-dir> [directories...]`
-class IsolateCommand extends Command<int> {
+class IsolateCommand extends Command<int> with DirectoryArguments {
   @override
   final name = 'isolate';
 
@@ -87,15 +88,7 @@ class IsolateCommand extends Command<int> {
 
   @override
   Future<int> run() async {
-    final directories = argResults!.rest;
-
-    if (directories.isEmpty) {
-      usageException('At least one directory must be specified.');
-    }
-
-    final repoDirs = directories
-        .map((a) => p.normalize(p.absolute(a)))
-        .toList();
+    final repoDirs = readDirectories(label: 'Isolation directories');
     final outputDir = p.normalize(
       p.absolute(argResults!['output-dir'] as String),
     );

@@ -121,6 +121,6 @@ class AnalysisResultModel extends AnalysisResultEntity {
   }
 }
 
-extension BoolToIntExtension on bool {
+extension _BoolToIntExtension on bool {
   int toInt() => this ? 1 : 0;
 }

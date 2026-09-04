@@ -4,8 +4,8 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
-import 'package:path/path.dart' as p;
 import 'package:spm/src/core/errors/exceptions.dart';
+import 'package:spm/src/core/constants/app_constants.dart';
 import 'package:spm/src/core/rebuild_path.dart';
 import 'package:spm/src/features/analysis/data/data_sources/extensions/state_class_detector.dart';
 import 'package:spm/src/features/isolation/data/data_sources/emitters/import_collector.dart';
@@ -16,6 +16,7 @@ import 'package:spm/src/features/isolation/data/data_sources/helpers/declaration
 import 'package:spm/src/features/isolation/data/data_sources/helpers/default_values.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/flutter_namespace.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/inline_budget.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/project_paths.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonizer.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/ui_surface.dart';
@@ -36,6 +37,7 @@ class TransplantResult {
   const TransplantResult({
     required this.source,
     required this.inlinedThirdPartyDeclarations,
+    required this.inlinedThirdPartyPackages,
     required this.truncated,
     this.unseededBindings = const [],
     this.hasFixtureConstructor = false,
@@ -51,6 +53,20 @@ class TransplantResult {
 
   /// How many third-party declarations were carried into it.
   final int inlinedThirdPartyDeclarations;
+
+  /// The hosted packages that source came from, name to version.
+  ///
+  /// The count above says how much was carried; this says whose code it is,
+  /// which is the question a redistribution licence turns on and which nothing
+  /// downstream could previously answer. `carriedUiDeclarations` names library
+  /// URIs, but it names the repository's own libraries in the same list and it
+  /// records a declaration before the budget decides whether to keep it.
+  ///
+  /// Non-empty exactly when [inlinedThirdPartyDeclarations] is non-zero, unless
+  /// the source came from a path or git dependency, whose directory carries no
+  /// version to read. Both are recorded in the same statement inside
+  /// `InlineBudget.take`, so neither can drift from the other.
+  final Map<String, String> inlinedThirdPartyPackages;
 
   /// Whether the inline budget ran out, so some third-party UI was stood in for
   /// that would otherwise have been carried.
@@ -235,8 +251,7 @@ class TransplantExtractor {
     final projectRoot = result.session.analysisContext.contextRoot.root.path;
     final renamer = NamespaceRenamer(
       flutterNames,
-      isLocal: (path) =>
-          p.isWithin(projectRoot, path) || p.equals(projectRoot, path),
+      isLocal: (path) => isWithinRoot(projectRoot, path),
     );
     final eraser = NonRebuildBodyEraser();
     final rewriters = <SourceRewriter>[
@@ -318,7 +333,7 @@ class TransplantExtractor {
 
     // If we're isolating a full State class, we also need to look at its companion StatefulWidget
     if (scopeNode is ClassDeclaration) {
-      if (match.type == 'State') {
+      if (match.type == AppConstants.stateScopeType) {
         final statefulName = scopeNode
             .extendsClause
             ?.superclass
@@ -407,21 +422,7 @@ class TransplantExtractor {
           }
         }
 
-        final body = buildMethod.body;
-        if (body is BlockFunctionBody) {
-          buildBody = body.block.statements
-              .map(
-                (s) =>
-                    '    ${Skeletonizer.skeletonize(s, result, rewriters: rewriters)}',
-              )
-              .join('\n');
-        } else if (body is ExpressionFunctionBody) {
-          buildBody =
-              '    return ${Skeletonizer.skeletonize(body.expression, result, rewriters: rewriters)};';
-        } else {
-          buildBody =
-              '    ${Skeletonizer.skeletonize(body, result, rewriters: rewriters)}';
-        }
+        buildBody = _renderBody(buildMethod.body, result, rewriters);
 
         final payload = RebuildScopeVisitor.extractScopeFromBody(
           buildMethod.body,
@@ -566,30 +567,11 @@ class TransplantExtractor {
       }
     } else if (scopeNode is Block) {
       // Handle a raw block of code (uncommon but supported)
-      buildBody = scopeNode.statements
-          .map(
-            (s) =>
-                '    ${Skeletonizer.skeletonize(s, result, rewriters: rewriters)}',
-          )
-          .join('\n');
+      buildBody = _renderStatements(scopeNode.statements, result, rewriters);
       scopeNode.accept(extractor);
     } else if (scopeNode is FunctionExpression) {
       // Handle builder functions such as `BlocBuilder(builder: (context, state) => …)`.
-      final body = scopeNode.body;
-      if (body is BlockFunctionBody) {
-        buildBody = body.block.statements
-            .map(
-              (s) =>
-                  '    ${Skeletonizer.skeletonize(s, result, rewriters: rewriters)}',
-            )
-            .join('\n');
-      } else if (body is ExpressionFunctionBody) {
-        buildBody =
-            '    return ${Skeletonizer.skeletonize(body.expression, result, rewriters: rewriters)};';
-      } else {
-        buildBody =
-            '    ${Skeletonizer.skeletonize(body, result, rewriters: rewriters)}';
-      }
+      buildBody = _renderBody(scopeNode.body, result, rewriters);
 
       if (scopeNode.parameters != null) {
         for (final param in scopeNode.parameters!.parameters) {
@@ -695,7 +677,8 @@ class TransplantExtractor {
             // work never set out to change. Third-party inlining has no such
             // bound, so it pays, and once the budget is spent the declaration
             // takes the stand-in branch it would have taken before.
-            if (!ref.fullSurface && !budget.take(source.length)) {
+            if (!ref.fullSurface &&
+                !budget.take(source.length, unitResult.path)) {
               standIn(ref);
               matched = true;
               break;
@@ -920,6 +903,7 @@ $seedDeclarations$shimDeclarations$syntheticDeclarations${defaults.usesStub ? re
     return TransplantResult(
       source: source,
       inlinedThirdPartyDeclarations: budget.inlinedDeclarations,
+      inlinedThirdPartyPackages: budget.inlinedPackages,
       truncated: budget.exhausted,
       unseededBindings: [...seeds.unseeded, ...unseededFields]..sort(),
       hasFixtureConstructor: fixtureConstructor.isNotEmpty,
@@ -1489,6 +1473,41 @@ $assignments
   }
 
   /// Extracts the name of a formal parameter.
+  /// The skeletonised source of [body], indented to sit inside a generated
+  /// `build`.
+  ///
+  /// Every scope shape ends up here: a `State`'s own `build`, and the callback
+  /// of a builder-pattern widget. They rendered separately before, in copies
+  /// that had to be kept in step by hand.
+  String _renderBody(
+    FunctionBody body,
+    ResolvedUnitResult result,
+    List<SourceRewriter> rewriters,
+  ) {
+    if (body is BlockFunctionBody) {
+      return _renderStatements(body.block.statements, result, rewriters);
+    }
+    if (body is ExpressionFunctionBody) {
+      return '    return ${Skeletonizer.skeletonize(body.expression, result, rewriters: rewriters)};';
+    }
+    // A native or abstract body has no statements to render, so the whole node
+    // is skeletonised and whatever comes back is emitted as is.
+    return '    ${Skeletonizer.skeletonize(body, result, rewriters: rewriters)}';
+  }
+
+  /// [statements] skeletonised one per line, at the indent a generated `build`
+  /// expects.
+  String _renderStatements(
+    Iterable<Statement> statements,
+    ResolvedUnitResult result,
+    List<SourceRewriter> rewriters,
+  ) => statements
+      .map(
+        (s) =>
+            '    ${Skeletonizer.skeletonize(s, result, rewriters: rewriters)}',
+      )
+      .join('\n');
+
   String? _getParamName(FormalParameter param) {
     if (param is RegularFormalParameter) return param.name?.lexeme;
     if (param is FieldFormalParameter) return param.name.lexeme;
@@ -1559,13 +1578,11 @@ $assignments
           if (current is InstanceCreationExpression) {
             final name = current.constructorName.type.name.lexeme;
             if (widgetType != null && name.contains(widgetType)) break;
-            if ([
-              'BlocBuilder',
-              'Consumer',
-              'Selector',
-              'BlocSelector',
-              'BlocConsumer',
-            ].any((t) => name.contains(t))) {
+            // The same set `isolate` matches scopes with, rather than a
+            // second list beside it. The old literal here omitted `Obx`,
+            // `GetX`, `GetBuilder` and `Observer`, so the walk ran past a
+            // GetX or MobX builder to whatever enclosed it.
+            if (AppConstants.builderScopeWidgets.any((t) => name.contains(t))) {
               break;
             }
           }
@@ -1586,13 +1603,22 @@ $assignments
             final args = _splitTypeArgs(typeArgsStr);
             final typeName = current.constructorName.type.name.lexeme;
 
+            // Which type argument holds the callback's parameter type is a
+            // per-widget convention, not a membership test, so this stays a
+            // cascade rather than reading the constant. `BlocBuilder<B, S>`
+            // and friends put the state second; `Consumer<T>`, `GetX<C>` and
+            // `GetBuilder<C>` put it first. `Obx` and `Observer` are absent on
+            // purpose: neither carries a type argument the callback binds to.
             if ((typeName.contains('BlocBuilder') ||
                     typeName.contains('Selector') ||
                     typeName.contains('BlocSelector') ||
                     typeName.contains('BlocConsumer')) &&
                 args.length >= 2) {
               return _nonNullable(args[1].trim());
-            } else if (typeName.contains('Consumer') && args.isNotEmpty) {
+            } else if ((typeName.contains('Consumer') ||
+                    typeName.contains('GetX') ||
+                    typeName.contains('GetBuilder')) &&
+                args.isNotEmpty) {
               return _nonNullable(args[0].trim());
             }
           }
@@ -1700,7 +1726,7 @@ List<ClassDeclaration> _includeCompanionState(
           unitResult,
           rewriters: rewriters,
         );
-        budget?.take(source.length);
+        budget?.take(source.length, unitResult.path);
         extractor.classCode += '\n$source\n';
         extractor.emittedNames.add(other.namePart.typeName.lexeme);
         companions.add(other);

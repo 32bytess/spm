@@ -25,4 +25,12 @@ class ProfilerDI {
 
   static MonitorDataflowUseCase get monitorDataflowUseCase =>
       _monitorDataflowUseCase ??= MonitorDataflowUseCase(repository);
+
+  /// Resets all cached instances. Use in tests to ensure a clean slate.
+  static void reset() {
+    _dataSource = null;
+    _repository = null;
+    _monitorPerformanceUseCase = null;
+    _monitorDataflowUseCase = null;
+  }
 }

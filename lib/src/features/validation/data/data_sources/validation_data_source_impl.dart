@@ -1,7 +1,6 @@
-import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/diagnostic/diagnostic.dart' as diag;
-import 'package:analyzer/file_system/physical_file_system.dart';
+import 'package:spm/src/core/analysis/package_config.dart';
 import 'package:spm/src/core/errors/exceptions.dart';
 import 'package:spm/src/core/constants/app_constants.dart';
 import 'package:spm/src/features/analysis/data/data_sources/sets/rebuild_scope_instance_set.dart';
@@ -29,10 +28,11 @@ class ValidationDataSourceImpl implements ValidationDataSource {
   }) async {
     // One collection for all files so the mutation resolves against the
     // real, unmodified dependencies.dart and the compile check is free.
-    final collection = AnalysisContextCollection(
-      includedPaths: [basePath, mutationPath, ?depsPath],
-      resourceProvider: PhysicalResourceProvider.INSTANCE,
-    );
+    final collection = contextCollectionFor([
+      basePath,
+      mutationPath,
+      ?depsPath,
+    ]);
 
     final baseResult = await collection
         .contextFor(basePath)

@@ -27,11 +27,17 @@ Future<List<AnalysisResultEntity>> getResultsForFixture(
 
   final results = <AnalysisResultEntity>[];
   await for (final event in analyzeUseCase.call([fullPath])) {
-    event.fold((failure) {}, (result) {
-      if (result is AnalysisDataEvent) {
-        results.add(result.result);
-      }
-    });
+    event.fold(
+      (failure) => throw Exception(
+        'Analysis failed for $relativePath: ${failure.runtimeType} '
+        '${failure.message}',
+      ),
+      (result) {
+        if (result is AnalysisDataEvent) {
+          results.add(result.result);
+        }
+      },
+    );
   }
 
   return results;

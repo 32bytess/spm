@@ -4,7 +4,6 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
-import 'package:path/path.dart' as p;
 import 'package:spm/src/core/rebuild_path.dart';
 import 'package:spm/src/features/isolation/data/data_sources/emitters/import_collector.dart';
 import 'package:spm/src/features/isolation/data/data_sources/emitters/shim_emitter.dart';
@@ -13,6 +12,7 @@ import 'package:spm/src/features/isolation/data/data_sources/helpers/declaration
 import 'package:spm/src/features/isolation/data/data_sources/helpers/default_values.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/flutter_namespace.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/inline_budget.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/project_paths.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/sdk_uris.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonizer.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/ui_surface.dart';
@@ -147,7 +147,7 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
   /// Returns true if the [filePath] belongs to the local project (not a package or SDK).
   bool isProjectLocal(String filePath) {
     final root = originResult.session.analysisContext.contextRoot.root.path;
-    return p.isWithin(root, filePath) || p.equals(root, filePath);
+    return isWithinRoot(root, filePath);
   }
 
   /// Whether [importedLib] actually provides [name] to whoever imports it.
@@ -576,7 +576,7 @@ class DependencyExtractorVisitor extends RecursiveAstVisitor<void> {
           originResult,
           rewriters: rewriters,
         );
-        if (!budget.take(source.length)) return false;
+        if (!budget.take(source.length, originResult.path)) return false;
         classCode += '\n$source\n';
         registerInlinedDeclaration(decl, defaults);
         emittedNames.addAll(declaredNames(decl));

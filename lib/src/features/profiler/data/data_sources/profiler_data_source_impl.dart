@@ -40,12 +40,10 @@ class ProfilerDataSourceImpl implements ProfilerDataSource {
     _isMonitoring = true;
     final completer = Completer<void>();
     int rebuildCount = 0;
-    int opacityRebuildCount = 0;
-    int shaderMaskRebuildCount = 0;
-    int clipRRectRebuildCount = 0;
-    int clipOvalRebuildCount = 0;
-    int clipPathRebuildCount = 0;
-    int backdropFilterRebuildCount = 0;
+    // Keyed by widget type name so the tally follows
+    // [AppConstants.expensiveWidgets] rather than restating it. A name added to
+    // that set is counted here without touching this method.
+    final Map<String, int> expensiveRebuildCounts = {};
     final RebuildDirtyWidgetCallback? prevCallback = debugOnRebuildDirtyWidget;
     final Element rootElement = context as Element;
 
@@ -57,20 +55,11 @@ class ProfilerDataSourceImpl implements ProfilerDataSource {
           rebuildCount++;
           final typeName = e.widget.runtimeType.toString();
           if (AppConstants.expensiveWidgets.contains(typeName)) {
-            switch (typeName) {
-              case 'Opacity':
-                opacityRebuildCount++;
-              case 'ShaderMask':
-                shaderMaskRebuildCount++;
-              case 'ClipRRect':
-                clipRRectRebuildCount++;
-              case 'ClipOval':
-                clipOvalRebuildCount++;
-              case 'ClipPath':
-                clipPathRebuildCount++;
-              case 'BackdropFilter':
-                backdropFilterRebuildCount++;
-            }
+            expensiveRebuildCounts.update(
+              typeName,
+              (count) => count + 1,
+              ifAbsent: () => 1,
+            );
           }
         }
         if (prevCallback != null) {
@@ -95,12 +84,13 @@ class ProfilerDataSourceImpl implements ProfilerDataSource {
             totalWidgetCount: structMetrics.totalCount,
             maxNestingDepth: structMetrics.maxDepth,
             taintedRatio: ratio,
-            opacityRebuildCount: opacityRebuildCount,
-            shaderMaskRebuildCount: shaderMaskRebuildCount,
-            clipRRectRebuildCount: clipRRectRebuildCount,
-            clipOvalRebuildCount: clipOvalRebuildCount,
-            clipPathRebuildCount: clipPathRebuildCount,
-            backdropFilterRebuildCount: backdropFilterRebuildCount,
+            opacityRebuildCount: expensiveRebuildCounts['Opacity'] ?? 0,
+            shaderMaskRebuildCount: expensiveRebuildCounts['ShaderMask'] ?? 0,
+            clipRRectRebuildCount: expensiveRebuildCounts['ClipRRect'] ?? 0,
+            clipOvalRebuildCount: expensiveRebuildCounts['ClipOval'] ?? 0,
+            clipPathRebuildCount: expensiveRebuildCounts['ClipPath'] ?? 0,
+            backdropFilterRebuildCount:
+                expensiveRebuildCounts['BackdropFilter'] ?? 0,
           );
           _helper.logEvent(data.toJson());
 

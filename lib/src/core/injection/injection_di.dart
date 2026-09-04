@@ -10,7 +10,6 @@ import 'package:spm/src/features/injection/data/repositories/run_app_repository_
 import 'package:spm/src/features/injection/domain/repositories/flutter_analyze_repository.dart';
 import 'package:spm/src/features/injection/domain/repositories/injection_repository.dart';
 import 'package:spm/src/features/injection/domain/repositories/run_app_repository.dart';
-import 'package:spm/src/features/injection/domain/use_cases/flutter_analyze_use_case.dart';
 import 'package:spm/src/features/injection/domain/use_cases/inject_use_case.dart';
 import 'package:spm/src/features/injection/domain/use_cases/run_with_injection_use_case.dart';
 
@@ -20,7 +19,6 @@ class InjectionDI {
 
   static FlutterAnalyzeDataSource? _flutterAnalyzeDataSource;
   static FlutterAnalyzeRepository? _flutterAnalyzeRepository;
-  static FlutterAnalyzeUseCase? _flutterAnalyzeUseCase;
   static InjectionDataSource? _dataSource;
   static InjectionRepository? _repository;
   static InjectUseCase? _injectUseCase;
@@ -34,11 +32,6 @@ class InjectionDI {
   static FlutterAnalyzeRepository get flutterAnalyzeRepository =>
       _flutterAnalyzeRepository ??= FlutterAnalyzeRepositoryImpl(
         flutterAnalyzeDataSource,
-      );
-
-  static FlutterAnalyzeUseCase get flutterAnalyzeUseCase =>
-      _flutterAnalyzeUseCase ??= FlutterAnalyzeUseCase(
-        flutterAnalyzeRepository,
       );
 
   static InjectionDataSource get dataSource =>
@@ -67,7 +60,6 @@ class InjectionDI {
   static void reset() {
     _flutterAnalyzeDataSource = null;
     _flutterAnalyzeRepository = null;
-    _flutterAnalyzeUseCase = null;
     _dataSource = null;
     _repository = null;
     _injectUseCase = null;

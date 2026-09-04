@@ -1,5 +1,96 @@
 # Changelog
 
+## 0.7.1
+
+A field, a check and a crash on top of 0.7.0, and then four defects and a round of consolidation.
+The emitted Dart is byte-identical to 0.7.0's for every scope, so isolate output from the two
+releases can be pooled.
+
+Three of the four defects are in code no test reaches. `injection` and `profiler` have no test files
+at all, and `lib/spm.dart`, the library instrumented apps import, is never imported by one. That is
+how a `print` in a public API survived to a release candidate.
+
+### Added
+
+- `inlinedThirdPartyPackages` on every `isolate` mapping row: the hosted packages the transplant
+  carried source from, name to version, omitted when there are none. `inlinedThirdPartyDeclarations`
+  said how much package code a scope carried and nothing said whose it was, so a consumer deciding
+  whether the isolated file may be redistributed had no way to ask. `carriedUiDeclarations` does not
+  answer it either. It names the project's own libraries in the same list, and it records a
+  declaration before the budget decides whether to keep it.
+
+  Written inside `InlineBudget.take`, in the same statement that increments the count, so the two
+  cannot drift: a row reporting a count and no packages means a path or git dependency, whose
+  directory carries no version to read, and never a recording somebody forgot to make. `take` now
+  requires the path the declaration's source was read from, which is what makes that structural
+  rather than a convention.
+
+  Removed from the row alongside the count when `isolate` reverts unprofitable inlining, since the
+  package source is no longer in the file it would be describing.
+
+### Changed
+
+- `isolate` rejects a directory that does not exist, the way `analyze` already did. It used to take
+  the path, find nothing under it and write an empty output directory, so a typo in a project path
+  looked like a project with no rebuild scopes in it. Both commands now read their positional
+  arguments through one mixin, `DirectoryArguments`, and print the same usage error.
+
+- The predicate for "is this type a `Widget`" lives in `core/analysis/type_predicates.dart` and both
+  commands ask it. `analyze` and `isolate` each carried a private copy, and the two bodies were
+  identical character for character. Two copies of the predicate that separates a widget from a
+  value object is two chances for the commands to disagree about what they are counting, and a row
+  from each is meant to describe the same tree. `hasSupertypeNamed` moved there with it, since the
+  emitter's own version answered the same question one step earlier.
+
+- The three isolation callers that ask whether a path belongs to the project being analysed share
+  `helpers/project_paths.dart`. Each carried the same two comparisons; a disagreement between any
+  two of them would mean a declaration inlined by one gate and stood in for by another.
+
+- Every DI class now exposes `reset()`. `ProfilerDI` was the one that did not, while the
+  documentation said all of them did.
+
+### Fixed
+
+- `SpmState.setState` no longer prints on every rebuild. The line ran before the mode branch, so it
+  fired in release builds as well as profile and debug, once per `setState` per instrumented widget,
+  in every app that depends on this package. It was the only `print` in `lib/`, which the repository
+  guidance already forbids in favour of `SpmLogger`.
+
+- `spm run` could throw out of a stream callback while the app was starting. The VM service URI is
+  awaited on one completer and both process streams were scanned for it, but only the stderr
+  listener asked the completer whether it was already done; the stdout one tracked the same thing in
+  a local flag of its own. Flutter prints that line to either stream depending on the device and the
+  command, so a URI seen on stderr first left the stdout flag false, and the next matching line
+  completed a completed completer. One scanner now serves both streams and asks the completer.
+
+- `monitorDataFlow` counts the expensive widgets that `AppConstants.expensiveWidgets` names, rather
+  than the six a `switch` beside it happened to repeat. The guard asked the constant and the body
+  then re-enumerated the same names, so the constant looked like the single list and was not: a
+  widget added to it passed the guard and incremented nothing. The tally is now keyed by type name,
+  so the set is the only place the list is written. The event still carries the same six named
+  fields, so a seventh name is counted but has nowhere to be reported until the entity gains a slot
+  for it.
+
+- The transplant recognises `Obx`, `GetX`, `GetBuilder` and `Observer` when it walks out of a
+  builder callback looking for the widget that owns it. It matched against a five-name literal
+  standing beside `AppConstants.builderScopeWidgets`, which holds nine, so for a GetX or MobX scope
+  the walk ran past the builder to whatever enclosed it and inferred the callback parameter's type
+  from the wrong widget. `GetX<C>` and `GetBuilder<C>` now read their controller type the way
+  `Consumer<T>` already did. `Obx` and `Observer` stay out of that second step on purpose, since
+  neither carries a type argument the callback binds to.
+
+- `spm isolate` reads the scope-type label from `AppConstants.stateScopeType` where it used to
+  compare against a `'State'` literal. The visitor that produces the label already read it from the
+  constant, so producer and consumer are no longer two independent spellings of one string.
+
+### Removed
+
+- `ComplexityExtractionException`, `ContextExtractionException` and the two failures they mapped to.
+  Neither exception was thrown anywhere in the package. They were only caught, in `analyze`'s
+  repository, and those two unreachable arms were the only place the two failures were ever
+  constructed. `failures.dart` now declares 17 subclasses of `Failure`, `CompoundFailure` among
+  them.
+
 ## 0.7.0
 
 Everything since 0.6.0. Two things carry the release. `spm analyze` reads a library outside the

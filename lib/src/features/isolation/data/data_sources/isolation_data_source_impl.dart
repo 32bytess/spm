@@ -1,15 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
 import 'package:analyzer/dart/analysis/results.dart';
 import 'package:analyzer/dart/analysis/session.dart';
-import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:path/path.dart' as p;
+import 'package:spm/src/core/analysis/package_config.dart';
 import 'package:spm/src/core/errors/exceptions.dart';
 import 'package:spm/src/features/isolation/data/data_sources/extractors/transplant_extractor.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/inline_budget.dart';
-import 'package:spm/src/core/analysis/package_config.dart';
 import 'package:spm/src/features/isolation/data/data_sources/isolation_data_source.dart';
 import 'package:spm/src/features/isolation/data/data_sources/sets/isolation_match_set.dart';
 import 'package:spm/src/features/isolation/data/data_sources/verifier/output_verifier.dart';
@@ -237,6 +235,7 @@ class IsolationDataSourceImpl implements IsolationDataSource {
       merged[scope.targetPath] = after;
       final row = mapping[scope.row];
       row.remove('inlinedThirdPartyDeclarations');
+      row.remove('inlinedThirdPartyPackages');
       row.remove('thirdPartyInlineTruncated');
       // Said out loud, because this row measures a smaller tree than the same
       // scope does in place, and the count alone would not show it.
@@ -276,10 +275,7 @@ class IsolationDataSourceImpl implements IsolationDataSource {
     }
 
     // Collect all analysis contexts for the provided directories
-    final collection = AnalysisContextCollection(
-      includedPaths: directories,
-      resourceProvider: PhysicalResourceProvider.INSTANCE,
-    );
+    final collection = contextCollectionFor(directories);
 
     if (collection.contexts.isEmpty) {
       throw IsolationException(
@@ -376,6 +372,13 @@ class IsolationDataSourceImpl implements IsolationDataSource {
             if (transplant.inlinedThirdPartyDeclarations > 0)
               'inlinedThirdPartyDeclarations':
                   transplant.inlinedThirdPartyDeclarations,
+            // Whose code the count above is. Emitted beside it and omitted on
+            // the same condition, so the pair reads as one fact: this scope
+            // carried source from these packages at these versions. A consumer
+            // deciding whether the transplant may be redistributed needs the
+            // names, and a count cannot supply them.
+            if (transplant.inlinedThirdPartyPackages.isNotEmpty)
+              'inlinedThirdPartyPackages': transplant.inlinedThirdPartyPackages,
             // Only when it happened. A row without the field carried whatever
             // third-party UI it reached; a row with it measures a smaller tree
             // than the same scope would in place, and that is not something a
