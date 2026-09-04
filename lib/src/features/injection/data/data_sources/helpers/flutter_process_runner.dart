@@ -44,8 +44,8 @@ class FlutterProcessRunner {
     final stdoutDone = Completer<void>();
     final stderrDone = Completer<void>();
 
-    _listenStdout(process.stdout, vmUriCompleter, stdoutDone);
-    _listenStderr(process.stderr, vmUriCompleter, stderrDone);
+    _listenAndScan(process.stdout, stdout, vmUriCompleter, stdoutDone);
+    _listenAndScan(process.stderr, stderr, vmUriCompleter, stderrDone);
 
     return FlutterProcessRunner._(
       process: process,
@@ -66,46 +66,18 @@ class FlutterProcessRunner {
 
   // -- private helpers ----------------------
 
-  static void _listenStdout(
+  /// Echoes [stream] to [sink] and watches the lines going by for the Dart VM
+  /// service URI, completing [vmUriCompleter] with the first one seen.
+  ///
+  /// Both streams are scanned by one function on purpose. They used to have a
+  /// listener each, and the copies drifted: the stdout one tracked "found it"
+  /// in a local flag rather than asking the completer. Since the two share a
+  /// completer, a URI printed to stderr first left that flag false, so stdout
+  /// went on to complete an already-completed completer and throw out of a
+  /// stream callback. Asking [vmUriCompleter] is the guard that cannot drift.
+  static void _listenAndScan(
     Stream<List<int>> stream,
-    Completer<String?> vmUriCompleter,
-    Completer<void> done,
-  ) {
-    var vmUriFound = false;
-    var lineBuf = '';
-
-    stream.listen(
-      (bytes) {
-        stdout.add(bytes);
-
-        if (vmUriFound) return;
-        lineBuf += utf8.decode(bytes, allowMalformed: true);
-        while (lineBuf.contains('\n')) {
-          final idx = lineBuf.indexOf('\n');
-          final line = lineBuf.substring(0, idx);
-          lineBuf = lineBuf.substring(idx + 1);
-
-          final match = _vmServiceUriPattern.firstMatch(line);
-          if (match != null) {
-            vmUriFound = true;
-            vmUriCompleter.complete(_toWsUri(match.group(1)!));
-            break;
-          }
-        }
-      },
-      onDone: () {
-        if (!vmUriCompleter.isCompleted) vmUriCompleter.complete(null);
-        done.complete();
-      },
-      onError: (_) {
-        if (!vmUriCompleter.isCompleted) vmUriCompleter.complete(null);
-        done.complete();
-      },
-    );
-  }
-
-  static void _listenStderr(
-    Stream<List<int>> stream,
+    IOSink sink,
     Completer<String?> vmUriCompleter,
     Completer<void> done,
   ) {
@@ -113,7 +85,7 @@ class FlutterProcessRunner {
 
     stream.listen(
       (bytes) {
-        stderr.add(bytes);
+        sink.add(bytes);
 
         if (vmUriCompleter.isCompleted) return;
         lineBuf += utf8.decode(bytes, allowMalformed: true);

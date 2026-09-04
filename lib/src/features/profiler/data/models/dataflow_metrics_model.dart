@@ -15,21 +15,6 @@ class DataflowMetricsModel extends DataFlowMetricsEntity {
     required super.backdropFilterRebuildCount,
   });
 
-  factory DataflowMetricsModel.fromEntity(DataFlowMetricsEntity entity) =>
-      DataflowMetricsModel(
-        instanceId: entity.instanceId,
-        taintedRebuildCount: entity.taintedRebuildCount,
-        totalWidgetCount: entity.totalWidgetCount,
-        maxNestingDepth: entity.maxNestingDepth,
-        taintedRatio: entity.taintedRatio,
-        opacityRebuildCount: entity.opacityRebuildCount,
-        shaderMaskRebuildCount: entity.shaderMaskRebuildCount,
-        clipRRectRebuildCount: entity.clipRRectRebuildCount,
-        clipOvalRebuildCount: entity.clipOvalRebuildCount,
-        clipPathRebuildCount: entity.clipPathRebuildCount,
-        backdropFilterRebuildCount: entity.backdropFilterRebuildCount,
-      );
-
   Map<String, dynamic> toJson() => {
     'timestamp': timestamp,
     'event': event,

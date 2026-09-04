@@ -1,6 +1,7 @@
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/element_access.dart';
 
 /// Decides whether a declaration can contribute widgets to a build tree.
 ///
@@ -73,7 +74,7 @@ bool isUiClassDeclaration(ClassDeclaration decl) {
   // (e.g. `class MyCard extends BaseCard` where BaseCard extends
   // StatelessWidget, or `class MyPainter extends _BasePainter` where
   // _BasePainter extends CustomPainter).
-  final element = _elementOfDeclaration(decl);
+  final element = elementOfDeclaration(decl);
   if (element is InterfaceElement) return _hasUiSupertype(element);
   return false;
 }
@@ -83,7 +84,7 @@ bool isUiClassDeclaration(ClassDeclaration decl) {
 bool isStatefulWidgetDeclaration(ClassDeclaration decl) {
   final superName = decl.extendsClause?.superclass.name.lexeme;
   if (superName == 'StatefulWidget') return true;
-  final element = _elementOfDeclaration(decl);
+  final element = elementOfDeclaration(decl);
   if (element is! InterfaceElement) return false;
   return element.allSupertypes.any((t) => t.element.name == 'StatefulWidget');
 }
@@ -194,18 +195,4 @@ bool _isUiType(DartType? type) {
   } catch (_) {
     return false;
   }
-}
-
-/// The element behind a declaration, across the spellings the analyzer has used
-/// for it.
-Element? _elementOfDeclaration(ClassDeclaration decl) {
-  try {
-    final element = (decl as dynamic).declaredFragment?.element;
-    if (element is Element) return element;
-  } catch (_) {}
-  try {
-    final element = (decl as dynamic).declaredElement;
-    if (element is Element) return element;
-  } catch (_) {}
-  return null;
 }

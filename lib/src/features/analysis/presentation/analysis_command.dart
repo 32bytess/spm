@@ -2,16 +2,16 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:args/command_runner.dart';
-import 'package:path/path.dart' as p;
 import 'package:spm/src/core/constants/app_constants.dart';
 import 'package:spm/src/core/errors/failures.dart';
 import 'package:spm/src/core/injection/cli_service_locator.dart';
 import 'package:spm/src/core/loggor/logger.dart';
+import 'package:spm/src/core/presentation/directory_arguments.dart';
 import 'package:spm/src/features/analysis/domain/entities/analysis_event.dart';
 import 'package:spm/src/features/analysis/domain/use_cases/analyze_use_case.dart';
 import 'package:spm/src/features/analysis/domain/use_cases/save_result_use_case.dart';
 
-class AnalysisCommand extends Command<int> {
+class AnalysisCommand extends Command<int> with DirectoryArguments {
   final AnalyzeUseCase? _analyzeUseCase;
   final SaveResultUseCase? _saveResultUseCase;
 
@@ -62,21 +62,7 @@ class AnalysisCommand extends Command<int> {
   Future<int> run() async {
     SpmLogger.logMessage('Starting analysis...');
 
-    final directories = argResults!.rest;
-
-    if (directories.isEmpty) {
-      usageException('At least one directory must be specified.');
-    }
-
-    final repoDirs = directories
-        .map((a) => p.normalize(p.absolute(a)))
-        .toList();
-    final missingDirs = repoDirs.where((path) => !Directory(path).existsSync());
-    if (missingDirs.isNotEmpty) {
-      usageException(
-        'Analysis directories do not exist: ${missingDirs.join(', ')}',
-      );
-    }
+    final repoDirs = readDirectories(label: 'Analysis directories');
     final verbose = argResults!['verbose'] as bool;
     final outputPath = argResults!['output'] as String;
     final selectedTypes = argResults!['scope-types'] as List<String>;

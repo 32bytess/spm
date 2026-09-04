@@ -1,5 +1,6 @@
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:spm/src/features/isolation/data/data_sources/helpers/element_access.dart';
 import 'package:spm/src/features/isolation/data/data_sources/helpers/skeletonizer.dart';
 
 /// Restores casts that type promotion used to make unnecessary.
@@ -43,7 +44,7 @@ class PromotionCastRewriter extends SourceRewriter {
     }
     if (parent is Label || parent is NamedType) return;
 
-    final element = _elementOf(node);
+    final element = elementOf(node);
     if (element is! LocalVariableElement &&
         element is! FormalParameterElement) {
       return;
@@ -76,18 +77,5 @@ class PromotionCastRewriter extends SourceRewriter {
     } catch (_) {
       return null;
     }
-  }
-
-  Element? _elementOf(SimpleIdentifier node) {
-    final dynamic n = node;
-    try {
-      final e = n.element;
-      if (e != null) return e as Element;
-    } catch (_) {}
-    try {
-      final e = n.staticElement;
-      if (e != null) return e as Element;
-    } catch (_) {}
-    return null;
   }
 }

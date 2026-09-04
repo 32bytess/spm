@@ -12,26 +12,6 @@ class AnalysisFailure extends Failure {
   AnalysisFailure(super.message, [this.stackTrace]);
 }
 
-class FeatureExtractionFailure extends Failure {
-  final String? featureName;
-  final String? stackTrace;
-  FeatureExtractionFailure(super.message, [this.featureName, this.stackTrace]);
-}
-
-class InvalidSetStateInstanceFailure extends Failure {
-  InvalidSetStateInstanceFailure(super.message);
-}
-
-class ComplexityExtractionFailure extends Failure {
-  final String? stackTrace;
-  ComplexityExtractionFailure(super.message, [this.stackTrace]);
-}
-
-class ContextExtractionFailure extends Failure {
-  final String? stackTrace;
-  ContextExtractionFailure(super.message, [this.stackTrace]);
-}
-
 class TreeExtractionFailure extends Failure {
   final String? stackTrace;
   TreeExtractionFailure(super.message, [this.stackTrace]);

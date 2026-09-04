@@ -1,6 +1,5 @@
-import 'package:analyzer/dart/analysis/analysis_context_collection.dart';
-import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:path/path.dart' as p;
+import 'package:spm/src/core/analysis/package_config.dart';
 import 'package:spm/src/core/constants/app_constants.dart';
 import 'package:spm/src/core/types.dart';
 import 'package:spm/src/features/injection/data/data_sources/helpers/injection_helper.dart';
@@ -16,10 +15,7 @@ class InjectionDataSourceImpl implements InjectionDataSource {
 
   @override
   AsyncVoid inject(String repoRoot, String jsonPath, InjectionMode mode) async {
-    final collection = AnalysisContextCollection(
-      includedPaths: [repoRoot],
-      resourceProvider: PhysicalResourceProvider.INSTANCE,
-    );
+    final collection = contextCollectionFor([repoRoot]);
 
     String? currentFilePath;
     var currentInjections = <JsonRecord>[];
