@@ -115,7 +115,32 @@ class InjectionHelper {
     }
 
     if (modified && !content.contains(AppConstants.spmStateImportLine)) {
-      content = '${AppConstants.spmStateImportLine}\n$content';
+      // A `library` directive must precede every other directive, so the import
+      // cannot go at offset 0 when the unit declares one. Arm 2's roles do:
+      // `dependencies.dart` is a `part of` the role's library, which is what
+      // makes one duplicate_definition error every role of a group at once.
+      // Arm 1's roles do not -- 0 of 535 files -- so this path was unreachable
+      // until the first arm-2 session on 2026-09-07, where the injected import
+      // landed above `library generated_widget;`, failed the build before the
+      // app could install, and captured 0 bytes of profiler data.
+      //
+      // `library.end` is taken from the ORIGINAL ast and stays valid: every
+      // edit above rewrites a class body, iterated highest-offset-first, and
+      // all of them sit after the directives.
+      LibraryDirective? library;
+      for (final directive in result.unit.directives) {
+        if (directive is LibraryDirective) {
+          library = directive;
+          break;
+        }
+      }
+      content = library == null
+          ? '${AppConstants.spmStateImportLine}\n$content'
+          : content.replaceRange(
+              library.end,
+              library.end,
+              '\n${AppConstants.spmStateImportLine}',
+            );
     }
 
     return content;
