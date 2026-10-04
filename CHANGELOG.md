@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.2
+
+One fix on top of 0.7.1, in `inject`. Nothing else changed: `analyze` and `isolate` output is
+byte-identical to 0.7.1's, and so is every injected file whose library has no `library` directive.
+
+### Fixed
+
+- `inject` puts the `SpmState` import after a `library` directive instead of above it. The import
+  was always written at offset 0, but Dart requires a `library` directive to come before every other
+  directive, so a file that declared one stopped compiling as soon as it was instrumented. The app
+  then failed to build before it could install, and the session captured no profiler data at all.
+  The path was unreachable for files without a `library` directive, which is why nothing caught it.
+  It appeared with files that are split into parts (`part` / `part of`), which declare a library
+  name. The import now goes straight after the directive when there is one, and at the top of the
+  file otherwise. The directive's offset is read from the original AST and stays valid, because
+  every other edit `inject` makes rewrites a class body, all of which come after the directives.
+
 ## 0.7.1
 
 A field, a check and a crash on top of 0.7.0, and then four defects and a round of consolidation.
