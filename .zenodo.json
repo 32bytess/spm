@@ -1,0 +1,29 @@
+{
+  "title": "spm: Scope Performance Metrics for Flutter rebuild scopes",
+  "upload_type": "software",
+  "version": "0.8.0",
+  "license": "BSD-3-Clause",
+  "description": "<p>Unified static analysis and runtime profiling for Flutter rebuild scopes and their triggers.</p><p><code>spm analyze</code> extracts per-scope static metrics of the widget tree a <code>build</code> method creates, <code>spm inject</code> and <code>spm run</code> measure profile-mode <code>buildSpan</code> on a device, and <code>spm isolate</code> writes self-contained copies of rebuild scopes. Version 0.8.0 adds <code>spm screen</code>, which compares two versions of a code base and gives two verdicts on the direction of each changed scope's rebuild cost: a count rule and a frozen random forest. The verdicts are a direction, never a build time. They come from measurements on one device and have not been evaluated with developers or in CI.</p>",
+  "creators": [
+    {
+      "name": "Amoura, Ammar Abderafik",
+      "affiliation": "Manisa Celal Bayar University",
+      "orcid": "0009-0003-0544-6255"
+    }
+  ],
+  "keywords": [
+    "flutter",
+    "cli",
+    "static-analysis",
+    "profiling",
+    "rebuild-scope"
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/32bytess/spm",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ],
+  "notes": "Developed and maintained on GitHub as 32bytess (https://github.com/32bytess)."
+}

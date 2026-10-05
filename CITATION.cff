@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use spm, please cite it as below."
+type: software
+title: "spm: Scope Performance Metrics for Flutter rebuild scopes"
+abstract: >-
+  Unified static analysis and runtime profiling for Flutter rebuild scopes and
+  their triggers. Version 0.8.0 adds `spm screen`, which gives a direction
+  verdict for the rebuild cost of each changed scope, never a build time.
+authors:
+  - family-names: Amoura
+    given-names: Ammar Abderafik
+    affiliation: Manisa Celal Bayar University
+    orcid: "https://orcid.org/0009-0003-0544-6255"
+    alias: 32bytess
+version: 0.8.0
+license: BSD-3-Clause
+repository-code: "https://github.com/32bytess/spm"
+url: "https://pub.dev/packages/spm"
+keywords:
+  - flutter
+  - cli
+  - static-analysis
+  - profiling
+  - rebuild-scope
