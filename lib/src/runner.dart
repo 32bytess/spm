@@ -4,6 +4,7 @@ import 'package:spm/src/features/analysis/presentation/analysis_command.dart';
 import 'package:spm/src/features/isolation/presentation/isolate_command.dart';
 import 'package:spm/src/features/injection/presentation/inject_command.dart';
 import 'package:spm/src/features/injection/presentation/run_with_injection_command.dart';
+import 'package:spm/src/features/screening/presentation/screen_command.dart';
 import 'package:spm/src/features/validation/presentation/validate_command.dart';
 
 class SpmRunner extends CommandRunner<int> {
@@ -17,6 +18,7 @@ class SpmRunner extends CommandRunner<int> {
     addCommand(InjectCommand());
     addCommand(RunWithInjectionCommand());
     addCommand(ValidateCommand());
+    addCommand(ScreenCommand());
   }
 
   @override

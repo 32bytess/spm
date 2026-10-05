@@ -18,10 +18,15 @@ schemas, metric definitions, and architecture notes. The package is published on
 
 ## Project status
 
-SPM pairs static build-tree metrics with profile-mode `buildSpan` measurements. For 1.0.0, the goal
-is to use those static metrics to screen a UI change without running or profiling the app. The
-binary result will indicate whether UI-thread frame build duration is stable or faster (`0`) or
-slower (`1`). This classifier is not available in the current release.
+SPM pairs static build-tree metrics with profile-mode `buildSpan` measurements. Since 0.8.0,
+`spm screen` uses those static metrics to screen a UI change without running or profiling the app.
+It compares the working tree against a stored snapshot and, for every rebuild scope whose metrics
+moved, gives two verdicts on the direction of its rebuild cost: a count rule (more non-const
+widgets means likely slower) and a frozen random forest over eight metric deltas.
+
+The verdicts are a direction, never a build time. The forest was trained on measurements from one
+device, and neither verdict has been evaluated with developers or in CI. Treat a flag as a reason to
+measure, not as a measurement.
 
 ## Install
 
@@ -48,6 +53,8 @@ spm validate --base base.dart --mutation mutation.dart --deps dependencies.dart 
 spm inject -j static.jsonl /path/to/flutter/project
 spm run -j static.jsonl -r /path/to/flutter/project --flutter drive --target=integration_test/integration_test.dart
 spm isolate -o isolated_widgets -j map.jsonl /path/to/flutter/project
+spm screen snapshot lib/                      # store a baseline for the current commit
+spm screen compare lib/ --fail-on either      # screen the working tree against it
 ```
 
 Start with the wiki's [Getting Started](https://github.com/32bytess/spm/wiki/Getting-Started)
@@ -61,8 +68,14 @@ bin/         CLI entry point
 lib/spm.dart supported Flutter integration API
 lib/src/     internal implementation
 test/        tests and fixtures
+tool/        regenerates the embedded screening model
 wiki/        separate Git repository for the project wiki
 ```
+
+## Citing
+
+If you use SPM in research, cite it with the metadata in [CITATION.cff](CITATION.cff). GitHub's
+"Cite this repository" button reads the same file.
 
 ## Contributing
 

@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.8.0
+
+Adds `spm screen`. Nothing else changed: `analyze`, `isolate`, `inject` and the profiler are
+untouched, and their output is byte-identical to 0.7.2's.
+
+### Added
+
+- `spm screen snapshot <dirs>` extracts the rebuild-scope metrics of `analyze` and stores them in
+  `.spm/screen/<short-hash>.jsonl` at the repository root. The name is the first 12 characters of
+  the commit, with `-dirty` appended when the working tree had uncommitted changes. An `index.json`
+  records the full commit, whether the tree was dirty, when the snapshot was taken and the spm
+  version. The files are plain text, so a team can commit the directory and share its baselines.
+  `--file` keeps one file's scopes (the directories are still analysed, so helpers and child
+  widgets resolve), and `--package-config` works as it does for `analyze`.
+- `spm screen compare <dirs>` extracts the working tree and picks a baseline snapshot. That is the
+  one named by `--against <commit>`. Without it, it is the newest snapshot of an ancestor of HEAD,
+  or of HEAD itself when there are uncommitted edits. If no such snapshot exists, `compare` falls
+  back to the newest snapshot and says it is not an ancestor. Scopes are matched by file, type and
+  name, and every scope whose metrics moved gets two verdicts on the direction of its rebuild cost:
+  - the **count rule**: likely slower when the edit adds non-const widgets;
+  - the **forest**: a frozen 500-tree random forest over eight metric deltas, embedded in the
+    package and scored antisymmetrically, so reverting an edit flips its verdict.
+
+  Warnings flag unresolved dependency closures, changed package versions, files skipped with compile
+  errors, and baselines that were dirty or written by another spm version. `--json` prints the
+  report. `--fail-on rule|forest|either|both` exits 1 when a scope is flagged slower, for CI.
+- `tool/embed_forest.dart` regenerates the embedded model from an exported forest JSON and stamps
+  the generated file with the JSON's sha256.
+- `test/features/screening/forest_parity_test.dart` checks the Dart port of the forest against the
+  Python scores to 1e-12, so the embedded model scores exactly as the one it was exported from.
+- `CITATION.cff` and `.zenodo.json`, so the release can be cited and archived on Zenodo.
+
+### Changed
+
+- `ScreenCommand` is registered in `lib/src/runner.dart`. That is the only line outside
+  `lib/src/features/screening/` that changed.
+- New dev dependency `crypto`, used only by `tool/embed_forest.dart` for the sha256 stamp. It is a
+  dev dependency, so it does not reach packages that depend on spm.
+
+### Limits
+
+Verdicts are a direction, never a build time. The forest was trained on measurements from one
+device and has not been evaluated with developers or in CI. Scopes that are renamed or moved are
+reported as removed and added, not scored. An edit that moves none of the eight metrics gets no
+verdict.
+
 ## 0.7.2
 
 One fix on top of 0.7.1, in `inject`. Nothing else changed: `analyze` and `isolate` output is
