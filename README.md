@@ -1,5 +1,7 @@
 # Scope Performance Metrics (SPM)
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23171328.svg)](https://doi.org/10.5281/zenodo.23171328)
+
 SPM finds rebuild scopes in Flutter projects and records the work performed by their build trees.
 It handles `State.build()` methods, consumer widgets, and builder callbacks from packages such as
 Bloc, Riverpod, and GetX.
@@ -76,6 +78,10 @@ wiki/        separate Git repository for the project wiki
 
 If you use SPM in research, cite it with the metadata in [CITATION.cff](CITATION.cff). GitHub's
 "Cite this repository" button reads the same file.
+
+SPM is archived on Zenodo. [10.5281/zenodo.23171328](https://doi.org/10.5281/zenodo.23171328)
+always resolves to the latest release; cite
+[10.5281/zenodo.23171329](https://doi.org/10.5281/zenodo.23171329) for version 0.8.0 specifically.
 
 ## Contributing
 

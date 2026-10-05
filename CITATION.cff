@@ -13,6 +13,11 @@ authors:
     orcid: "https://orcid.org/0009-0003-0544-6255"
     alias: 32bytess
 version: 0.8.0
+doi: 10.5281/zenodo.23171328
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.23171329
+    description: "Version 0.8.0"
 license: BSD-3-Clause
 repository-code: "https://github.com/32bytess/spm"
 url: "https://pub.dev/packages/spm"
